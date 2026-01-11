@@ -2,7 +2,6 @@ package com.example.myprojectbackend.controller;
 
 import com.example.myprojectbackend.entity.RestBean;
 import com.example.myprojectbackend.entity.vo.request.ConfirmResetVO;
-import com.example.myprojectbackend.entity.vo.request.EmailRegisterVO;
 import com.example.myprojectbackend.entity.vo.request.EmailResetVO;
 import com.example.myprojectbackend.service.AccountService;
 import jakarta.annotation.Resource;
@@ -31,11 +30,6 @@ public class AuthorizeController {
 
     }
 
-    @PostMapping("/register")
-    public RestBean<Void> register(@RequestBody EmailRegisterVO vo){
-        return this.messageHandle(() ->
-                accountService.registerEmailAccount(vo));
-    }
     @PostMapping("/reset-confirm")
     public RestBean<Void> resetConfirm(@RequestBody @Valid ConfirmResetVO vo){
         return this.messageHandle(() ->

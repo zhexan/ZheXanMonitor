@@ -37,7 +37,7 @@ public class securityConfiguration {
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
         return http
                 .authorizeHttpRequests(conf -> conf
-                        .requestMatchers("api/auth/**", "/error").permitAll()
+                        .requestMatchers("api/auth/**", "/error", "monitor/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 .formLogin(conf -> conf
@@ -52,7 +52,7 @@ public class securityConfiguration {
                 .exceptionHandling(conf -> conf
                         .authenticationEntryPoint(this::unAuthentication)
                         .accessDeniedHandler(this::onAccessDeny)
-                )
+                ) 
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(conf -> conf.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class)

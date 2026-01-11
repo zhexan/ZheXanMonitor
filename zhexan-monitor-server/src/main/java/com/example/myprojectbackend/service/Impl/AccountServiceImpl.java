@@ -72,26 +72,6 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, Account> impl
     }
 
     @Override
-    public String registerEmailAccount(EmailRegisterVO info) {
-            String email = info.getEmail();
-            String code = this.getEmailVerifyCode(email);
-            if(code == null) {
-                return "请先获取验证码";
-            }
-            if(!code.equals(info.getCode())) return "验证码输入错误";
-            if(this.existsAccountByEmail(email)) return "该邮箱已被注册";
-            String username = info.getUsername();
-            if(this.existsAccountByUserName(username)) return "该用户名已被注册";
-            String password = encoder.encode(info.getPassword());
-            Account account = new Account(null,username, password, email, "user", new Date());
-           if(this.save(account)) {
-               this.deleteEmailVerifyCode(email);
-               return null;
-           } else {
-               return "内部错误";
-           }
-    }
-    @Override
     public String resetConfirm(ConfirmResetVO vo){
         String email = vo.getEmail();
         String code = this.getEmailVerifyCode(email);
@@ -130,11 +110,5 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, Account> impl
     private String getEmailVerifyCode(String email){
         String key = Const.VERIFY_EMAIL_DATA + email;
         return stringRedisTemplate.opsForValue().get(key);
-    }
-    private boolean existsAccountByEmail(String email){
-        return this.baseMapper.exists(Wrappers.<Account>query().eq("email", email));
-    }
-    private boolean existsAccountByUserName(String username){
-        return this.baseMapper.exists(Wrappers.<Account>query().eq("email", username));
     }
 }
