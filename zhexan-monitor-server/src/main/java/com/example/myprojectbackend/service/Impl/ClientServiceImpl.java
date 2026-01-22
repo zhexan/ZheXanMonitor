@@ -2,14 +2,20 @@ package com.example.myprojectbackend.service.Impl;
 
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.myprojectbackend.entity.dto.Client;
+import com.example.myprojectbackend.entity.dto.ClientDetail;
+import com.example.myprojectbackend.entity.vo.request.ClientDetailVO;
+import com.example.myprojectbackend.mapper.ClientDetailMapper;
 import com.example.myprojectbackend.mapper.ClientMapper;
 import com.example.myprojectbackend.service.ClientService;
 import jakarta.annotation.PostConstruct;
+import jakarta.annotation.Resource;
+import org.springframework.beans.BeanUtils;
 import org.springframework.stereotype.Service;
 
 import java.security.SecureRandom;
 import java.util.Date;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Random;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -20,6 +26,9 @@ public class ClientServiceImpl extends ServiceImpl<ClientMapper, Client> impleme
     private final Map<Integer, Client> clientIDCache= new ConcurrentHashMap<>();
     private final Map<String, Client> clientTokenCache = new ConcurrentHashMap<>();
 
+    @Resource
+    ClientDetailMapper detailMapper;
+
     @PostConstruct
     public void initClientCache() {
         this.list().forEach(this::addClientCache);
@@ -28,6 +37,7 @@ public class ClientServiceImpl extends ServiceImpl<ClientMapper, Client> impleme
      * 向前端返回Token
      * @return registerToken
      */
+    @Override
     public String registerToken() {
         return registerToken;
     }
@@ -40,7 +50,7 @@ public class ClientServiceImpl extends ServiceImpl<ClientMapper, Client> impleme
     public boolean verifyAndRegister(String token) {
         if(this.registerToken.equals(token)) {
             int id = this.randomClientId();
-            Client client = new Client(id, "未命名主机", token, new Date());
+            Client client = new Client(id, "未命名主机", token, "cn", "未命名节点",new Date());
             if(this.save(client)){
                 registerToken = this.generateNewToken();
                 this.addClientCache(client);
@@ -60,10 +70,30 @@ public class ClientServiceImpl extends ServiceImpl<ClientMapper, Client> impleme
         return clientTokenCache.get(token);
     }
 
+    /**
+     * 更新客户端传来的数据
+     * @param vo 客户端发来的数据
+     * @param client 哪一个客户端
+     * @return
+     * @since 2026-01-21
+     */
+    @Override
+    public void updateClientDetail(ClientDetailVO vo, Client client) {
+        ClientDetail detail = new ClientDetail();
+        BeanUtils.copyProperties(vo, detail);
+        detail.setId(client.getId());
+        if(Objects.nonNull(detailMapper.selectById(client.getId()))) {
+            detailMapper.updateById(detail);
+        } else {
+            detailMapper.insert(detail);
+        }
+    }
+
     private void addClientCache(Client client) {
         clientIDCache.put(client.getId(),client);
         clientTokenCache.put(client.getToken(),client);
     }
+
     private int randomClientId() {
         return new Random().nextInt(99999999) + 10000000;
     }
@@ -74,6 +104,7 @@ public class ClientServiceImpl extends ServiceImpl<ClientMapper, Client> impleme
         for (int i = 0;i < 24; i++) {
            sb.append(CHARACTERS.charAt(random.nextInt(CHARACTERS.length())));
         }
+        System.out.println(sb);
         return sb.toString();
     }
 }

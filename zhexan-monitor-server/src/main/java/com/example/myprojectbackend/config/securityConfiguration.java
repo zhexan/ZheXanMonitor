@@ -4,12 +4,14 @@ import com.example.myprojectbackend.entity.RestBean;
 import com.example.myprojectbackend.entity.dto.Account;
 import com.example.myprojectbackend.entity.vo.response.AuthorizeVo;
 import com.example.myprojectbackend.filter.JWTAuthorizeFilter;
+import com.example.myprojectbackend.filter.RequestLogFilter;
 import com.example.myprojectbackend.service.AccountService;
+import com.example.myprojectbackend.utils.Const;
 import com.example.myprojectbackend.utils.JWTUtils;
 import jakarta.annotation.Resource;
-import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.access.AccessDeniedException;
@@ -23,22 +25,27 @@ import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 import java.io.IOException;
-
+@Slf4j
 @Configuration
 public class securityConfiguration {
     @Resource
     private JWTUtils utils;
     @Resource
-    private JWTAuthorizeFilter filter;
+    private JWTAuthorizeFilter jwtAuthorizeFilter;
+    @Resource
+    private RequestLogFilter requestLogFilter;
     @Resource
     private AccountService service;
 
+
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
+       log.info("执行security");
         return http
                 .authorizeHttpRequests(conf -> conf
-                        .requestMatchers("api/auth/**", "/error", "monitor/**").permitAll()
-                        .anyRequest().authenticated()
+                        .requestMatchers("api/auth/**", "/error").permitAll()
+                        .requestMatchers("/monitor/**").permitAll()
+                        .anyRequest().hasAnyRole(Const.ROLE_DEFAULT)
                 )
                 .formLogin(conf -> conf
                         .loginProcessingUrl("/api/auth/login")
@@ -55,7 +62,8 @@ public class securityConfiguration {
                 ) 
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(conf -> conf.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-                .addFilterBefore(filter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(requestLogFilter, UsernamePasswordAuthenticationFilter.class)
+                .addFilterBefore(jwtAuthorizeFilter, RequestLogFilter.class)
                 .build();
     }
 
@@ -110,7 +118,7 @@ public class securityConfiguration {
     public void onLogoutSuccess(HttpServletRequest request,
                                 HttpServletResponse response,
                                 Authentication authentication)
-            throws IOException, ServletException {
+            throws IOException {
         response.setContentType("application/json");
         response.setCharacterEncoding("UTF-8");
         String authorization = request.getHeader("Authorization");

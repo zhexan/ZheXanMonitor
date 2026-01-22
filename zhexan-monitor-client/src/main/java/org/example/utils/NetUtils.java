@@ -3,6 +3,7 @@ package org.example.utils;
 import com.alibaba.fastjson2.JSONObject;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.example.entity.BaseDetail;
 import org.example.entity.ConnectConfig;
 import org.example.entity.Response;
 import org.springframework.context.annotation.Lazy;
@@ -28,7 +29,7 @@ public class NetUtils {
         if(response.success()) {
             log.info("客服端注册成功");
         } else {
-            log.info("客户端注册失败：{}", response.massage());
+            log.error("客户端注册失败：{}", response.massage());
         }
         return response.success();
     }
@@ -38,8 +39,32 @@ public class NetUtils {
     private Response doGet(String url, String address, String token) {
         try {
             HttpRequest request = HttpRequest.newBuilder().GET()
-                    .uri(new URI(address + "monitor" + url))
+                    .uri(new URI(address + "/monitor" + url))
                     .header("Authorization", token)
+                    .build();
+            log.info(String.valueOf(request.headers()));
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            return JSONObject.parseObject(response.body()).to(Response.class);
+        } catch (Exception e) {
+            log.error("在发起请求时出现问题", e);
+            return Response.errorResponse(e);
+        }
+    }
+    public void updateBaseDetails(BaseDetail detail) {
+        Response response = this.doPost("/detail", detail);
+        if(response.success()) {
+            log.info("系统基本信息已更新完成");
+        } else {
+            log.error("系统基本信息更新失败：{}", response.massage());
+        }
+    }
+    private Response doPost(String url, Object data) {
+        try {
+            String rawData = JSONObject.from(data).toJSONString();
+            HttpRequest request = HttpRequest.newBuilder().POST(HttpRequest.BodyPublishers.ofString(rawData))
+                    .uri(new URI(config.getAddress() + "/monitor" + url))
+                    .header("Authorization", config.getToken())
+                    .header("Content-Type", "application/json")
                     .build();
             HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
             return JSONObject.parseObject(response.body()).to(Response.class);
@@ -48,4 +73,5 @@ public class NetUtils {
             return Response.errorResponse(e);
         }
     }
+
 }

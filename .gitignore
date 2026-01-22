@@ -5,7 +5,7 @@ target/
 !**/src/test/**/target/
 zhexan-monitor-client/src/test/java/org/example/
 zhexan-monitor-server/src/test/java/com/example/myprojectbackend/
-config/
+zhexan-monitor-jwt/config
 ### STS ###
 .apt_generated
 .classpath

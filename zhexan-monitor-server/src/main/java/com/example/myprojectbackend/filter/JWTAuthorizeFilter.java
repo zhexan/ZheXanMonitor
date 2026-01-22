@@ -11,6 +11,7 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+@Slf4j
 @Component
 public class JWTAuthorizeFilter extends OncePerRequestFilter {
     @Resource
@@ -31,10 +33,14 @@ public class JWTAuthorizeFilter extends OncePerRequestFilter {
                                     FilterChain filterChain)
             throws ServletException, IOException {
         String authorization = request.getHeader("Authorization");
+        log.info("authorization:{}", authorization);
         String uri = request.getRequestURI();
+        log.info("uri:{}", uri);
         if (uri.startsWith("/monitor")) {
+            log.info("execute uri.startsWith");
             if(!uri.endsWith("/register")) {
                 Client client = service.getClientByToken(authorization);
+                log.info("client:{}", client);
                 if (client == null) {
                     response.setStatus(401);
                     response.getWriter().write(RestBean.failure(401, "未注册").asJSONString());
@@ -43,16 +49,19 @@ public class JWTAuthorizeFilter extends OncePerRequestFilter {
                     request.setAttribute(Const.ATTR_CLIENT, client);
                 }
             }
+        } else {
+            log.info("execute JWT");
+            DecodedJWT jwt = utils.resolveJWT(authorization);
+            if(jwt != null) {
+                UserDetails user = utils.toUser(jwt);
+                UsernamePasswordAuthenticationToken authenticationToken =
+                        new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
+                authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
+                SecurityContextHolder.getContext().setAuthentication(authenticationToken);
+                request.setAttribute("id", utils.toId(jwt));
+            }
         }
-        DecodedJWT jwt = utils.resolveJWT(authorization);
-        if(jwt != null) {
-            UserDetails user = utils.toUser(jwt);
-            UsernamePasswordAuthenticationToken authenticationToken =
-                    new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
-            authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
-            SecurityContextHolder.getContext().setAuthentication(authenticationToken);
-            request.setAttribute("id", utils.toId(jwt));
-        }
+        log.info("execute filterChain");
         filterChain.doFilter(request, response);
     }
 }
