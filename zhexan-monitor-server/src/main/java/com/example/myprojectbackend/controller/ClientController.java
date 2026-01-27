@@ -3,6 +3,7 @@ package com.example.myprojectbackend.controller;
 import com.example.myprojectbackend.entity.RestBean;
 import com.example.myprojectbackend.entity.dto.Client;
 import com.example.myprojectbackend.entity.vo.request.ClientDetailVO;
+import com.example.myprojectbackend.entity.vo.request.RuntimeDetailVO;
 import com.example.myprojectbackend.service.ClientService;
 import com.example.myprojectbackend.utils.Const;
 import jakarta.annotation.Resource;
@@ -36,6 +37,20 @@ public class ClientController {
                                               @RequestBody @Valid ClientDetailVO vo) {
         clientService.updateClientDetail(vo, client);
         return RestBean.success();
+    }
+
+    /**
+     *
+     * @param client
+     * @param vo
+     * @return
+     * @since 2026-01-24
+     */
+    @PostMapping("/runtime")
+    public RestBean<Void>  updateRuntimeDetails(@RequestAttribute(Const.ATTR_CLIENT) Client client,
+                                                @RequestBody @Valid RuntimeDetailVO vo) {
+       clientService.updateRuntimeDetail(vo, client);
+       return RestBean.success();
     }
 }
 
