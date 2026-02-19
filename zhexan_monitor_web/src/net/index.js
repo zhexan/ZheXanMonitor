@@ -54,7 +54,11 @@ function internalPost(url, data, headers, success, failure, error = defaultError
             success(data.data)
         else
             failure(data.message, data.code, url)
-    }).catch(err => error(err))
+    }).catch(err => {
+        // 添加更详细的错误信息
+        console.error('POST请求错误:', err);
+        error(err)
+    })
 }
 
 function internalGet(url, headers, success, failure, error = defaultError){
@@ -63,17 +67,33 @@ function internalGet(url, headers, success, failure, error = defaultError){
             success(data.data)
         else
             failure(data.message, data.code, url)
-    }).catch(err => error(err))
+    }).catch(err => {
+        // 添加更详细的错误信息
+        console.error('GET请求错误:', err);
+        error(err)
+    })
 }
 
 function login(username, password, remember, success, failure = defaultFailure){
-    internalPost('/api/auth/login', {
+    internalPost('/api/auth/login', new URLSearchParams({
         username: username,
         password: password
-    }, {
+    }), {
         'Content-Type': 'application/x-www-form-urlencoded'
     }, (data) => {
         storeAccessToken(remember, data.token, data.expire)
+        
+        // 存储用户信息
+        const userInfo = {
+            username: data.username,
+            role: data.role
+        };
+        const userInfoStr = JSON.stringify(userInfo);
+        if(remember)
+            localStorage.setItem('userInfo', userInfoStr);
+        else
+            sessionStorage.setItem('userInfo', userInfoStr);
+        
         ElMessage.success(`登录成功，欢迎 ${data.username} 来到我们的系统`)
         success(data)
     }, failure)
@@ -86,6 +106,11 @@ function post(url, data, success, failure = defaultFailure) {
 function logout(success, failure = defaultFailure){
     get('/api/auth/logout', () => {
         deleteAccessToken()
+        
+        // 清除用户信息
+        localStorage.removeItem('userInfo');
+        sessionStorage.removeItem('userInfo');
+        
         ElMessage.success(`退出登录成功，欢迎您再次使用`)
         success()
     }, failure)

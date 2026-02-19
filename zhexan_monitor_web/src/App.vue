@@ -1,14 +1,11 @@
 <script setup>
 import { useDark, useToggle } from '@vueuse/core'
 
-useDark({
+const isDark = useDark({
   selector: 'html',
   attribute: 'class',
   valueDark: 'dark',
-  valueLight: 'light'
-})
-
-useDark({
+  valueLight: 'light',
   onChanged(dark) { useToggle(dark) }
 })
 

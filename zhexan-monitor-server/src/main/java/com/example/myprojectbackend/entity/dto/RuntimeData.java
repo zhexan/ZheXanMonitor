@@ -18,7 +18,7 @@ public class RuntimeData {
     @Column(timestamp = true)
     Instant timestamp;
     @Column
-    double cupUsage;
+    double cpuUsage;
     @Column
     double memoryUsage;
     @Column

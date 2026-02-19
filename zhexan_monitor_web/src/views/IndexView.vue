@@ -45,19 +45,42 @@
 </template>
 
 <script setup>
-import { logout } from '@/net'
+import { logout, get } from '@/net'
 import router from "@/router";
 import {Back, Moon, Sunny} from "@element-plus/icons-vue";
-import {ref} from "vue";
+import {ref, reactive} from "vue";
 import {useDark} from "@vueuse/core";
 import TabItem from "@/component/TabItem.vue";
 import {useRoute} from "vue-router";
-import {useStore} from "@/store";
-
-const store = useStore()
 
 const route = useRoute()
 const dark = ref(useDark())
+
+// 初始化 store 对象来存储用户信息
+const store = reactive({
+  isAdmin: false,
+  user: {
+    username: '',
+    email: ''
+  }
+})
+
+// 从本地存储获取用户信息
+const authStr = localStorage.getItem('authorize') || sessionStorage.getItem('authorize');
+if(authStr) {
+  const authObj = JSON.parse(authStr);
+  // 从token中解析或从后端获取用户信息，这里暂时从本地存储的认证信息中获取
+  // 实际上我们需要从登录时保存的信息中获取用户角色和邮箱信息
+  // 因为目前登录后只保存了token和expire，所以需要模拟用户信息
+  
+  // 由于登录时后端返回的用户名和角色信息只保存在token中，我们可以通过解析token获取
+  // 但更简单的方式是在登录后将用户信息保存到localStorage中
+  const userInfo = JSON.parse(localStorage.getItem('userInfo') || sessionStorage.getItem('userInfo') || '{}');
+  store.user.username = userInfo.username || 'Unknown';
+  store.user.email = userInfo.email || 'N/A';
+  store.isAdmin = userInfo.role === 'admin' || userInfo.role === 'ADMIN';
+}
+
 const tabs = [
   {id: 1, name: '管理', route: 'manage'},
   {id: 2, name: '安全', route: 'security'}
@@ -76,7 +99,13 @@ function changePage(item) {
 }
 
 function userLogout() {
-  logout(() => router.push("/"))
+  logout(() => {
+    // 登出后重置 store
+    store.isAdmin = false
+    store.user.username = ''
+    store.user.email = ''
+    router.push("/")
+  })
 }
 </script>
 

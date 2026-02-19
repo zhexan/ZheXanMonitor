@@ -12,6 +12,7 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.jetbrains.annotations.NotNull;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -29,15 +30,14 @@ public class JWTAuthorizeFilter extends OncePerRequestFilter {
     ClientService service;
     @Override
     protected void doFilterInternal(HttpServletRequest request,
-                                    HttpServletResponse response,
-                                    FilterChain filterChain)
+                                    @NotNull HttpServletResponse response,
+                                    @NotNull FilterChain filterChain)
             throws ServletException, IOException {
         String authorization = request.getHeader("Authorization");
         log.info("authorization:{}", authorization);
         String uri = request.getRequestURI();
         log.info("uri:{}", uri);
         if (uri.startsWith("/monitor")) {
-            log.info("execute uri.startsWith");
             if(!uri.endsWith("/register")) {
                 Client client = service.getClientByToken(authorization);
                 log.info("client:{}", client);
@@ -50,7 +50,6 @@ public class JWTAuthorizeFilter extends OncePerRequestFilter {
                 }
             }
         } else {
-            log.info("execute JWT");
             DecodedJWT jwt = utils.resolveJWT(authorization);
             if(jwt != null) {
                 UserDetails user = utils.toUser(jwt);
@@ -61,7 +60,6 @@ public class JWTAuthorizeFilter extends OncePerRequestFilter {
                 request.setAttribute("id", utils.toId(jwt));
             }
         }
-        log.info("execute filterChain");
         filterChain.doFilter(request, response);
     }
 }

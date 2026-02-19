@@ -14,6 +14,7 @@ import java.io.IOException;
 @Component
 @Order(Const.ORDER_CORS)
 public class CorsFilter extends HttpFilter {
+
     @Override
     protected void doFilter(HttpServletRequest request,
                             HttpServletResponse response,
@@ -21,10 +22,12 @@ public class CorsFilter extends HttpFilter {
         addCorsHeader(request, response);
         chain.doFilter(request, response);
     }
+    
     public void addCorsHeader(HttpServletRequest request,
                               HttpServletResponse response) {
         response.addHeader("Access-Control-Allow-Origin", request.getHeader("Origin"));
         response.addHeader("Access-Control-Allow-Methods", "GET, POST, PUT, DELETE, OPTIONS");
-        response.addHeader("Access-control-Allow-Headers", "Authorization, Content-Type");
+        response.addHeader("Access-Control-Allow-Headers", "Authorization, Content-Type");
+        response.addHeader("Access-Control-Max-Age", "3600"); // 预检请求缓存时间
     }
 }
