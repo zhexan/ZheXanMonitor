@@ -45,6 +45,7 @@ public class securityConfiguration {
                 .authorizeHttpRequests(conf -> conf
                         .requestMatchers("api/auth/**", "/error").permitAll()
                         .requestMatchers("/monitor/**").permitAll()
+                        .requestMatchers("api/user/sub/*").hasRole(Const.ROLE_ADMIN)
                         .anyRequest().hasAnyRole(Const.ROLE_NORMAL, Const.ROLE_ADMIN)
                 )
                 .formLogin(conf -> conf

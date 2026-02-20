@@ -21,6 +21,8 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
+import java.util.ArrayList;
+
 @Slf4j
 @Component
 public class JWTAuthorizeFilter extends OncePerRequestFilter {
@@ -58,6 +60,7 @@ public class JWTAuthorizeFilter extends OncePerRequestFilter {
                 authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authenticationToken);
                 request.setAttribute("id", utils.toId(jwt));
+                request.setAttribute(Const.ATTR_USER_ROLE, new ArrayList<>(user.getAuthorities()).get(0).getAuthority());
             }
         }
         filterChain.doFilter(request, response);

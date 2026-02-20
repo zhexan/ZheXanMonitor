@@ -66,6 +66,7 @@ public class JWTUtils {
         try {
             DecodedJWT decodedJWT = verifier.verify(token);
             if(this.isInvalidJwt(decodedJWT.getId())) return null;
+            if(this.isInvalidUser(decodedJWT.getClaim("id").asInt())) return null;
             Date expiresAt = decodedJWT.getExpiresAt();
             return new Date().after(expiresAt) ? null : decodedJWT;
         } catch (JWTVerificationException e) {
@@ -148,6 +149,13 @@ public class JWTUtils {
       long expire = Math.max(time.getTime() - now.getTime(), 0);
       template.opsForValue().setIfAbsent(Const.JWT_BLACK_LIST + uuid, "", expire, TimeUnit.MILLISECONDS);
       return true;
+    }
+    public void deleteUser(int uid) {
+        template.opsForValue().set(Const.USER_BLACK_LIST + uid, "", expire, TimeUnit.HOURS);
+    }
+
+    private boolean isInvalidUser(int uid){
+        return Boolean.TRUE.equals(template.hasKey(Const.USER_BLACK_LIST + uid));
     }
 
     /**

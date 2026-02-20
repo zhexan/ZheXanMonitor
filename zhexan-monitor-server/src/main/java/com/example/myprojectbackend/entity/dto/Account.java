@@ -1,17 +1,21 @@
 package com.example.myprojectbackend.entity.dto;
 
+import com.alibaba.fastjson2.JSONArray;
 import com.baomidou.mybatisplus.annotation.IdType;
 import com.baomidou.mybatisplus.annotation.TableId;
 import com.baomidou.mybatisplus.annotation.TableName;
+import com.example.myprojectbackend.entity.BaseData;
 import lombok.AllArgsConstructor;
 import lombok.Data;
 
+import java.util.Collections;
 import java.util.Date;
+import java.util.List;
 
 @Data
 @TableName("db_account")
 @AllArgsConstructor
-public class Account {
+public class Account implements BaseData {
     @TableId(type = IdType.AUTO)
     Integer id;
     String username;
@@ -19,5 +23,11 @@ public class Account {
     String email;
     String role;
     Date registerTime;
+    String clients;
+
+    public List<Integer> getClientList() {
+        if(clients == null) return Collections.emptyList();
+        return JSONArray.parse(clients).toList(Integer.class);
+    }
 
 }
