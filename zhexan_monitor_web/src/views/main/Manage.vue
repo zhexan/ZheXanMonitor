@@ -5,10 +5,28 @@ import {get} from "@/net"
 import ClientDetails from "@/component/ClientDetails.vue";
 import RegisterCard from "@/component/RegisterCard.vue";
 import {Plus} from "@element-plus/icons-vue";
+import {useRoute} from "vue-router";
+
+const locations = [
+  {name: 'cn', desc: '中国大陆'},
+  {name: 'hk', desc: '香港'},
+  {name: 'jp', desc: '日本'},
+  {name: 'us', desc: '美国'},
+  {name: 'sg', desc: '新加坡'},
+  {name: 'kr', desc: '韩国'},
+  {name: 'de', desc: '德国'}
+]
 
 const list = ref([])
 
-const updateList = () => get('/api/monitor/list', data => list.value = data)
+const checkedNodes = ref([])
+const route = useRoute();
+
+const updateList = () => {
+  if(route.name === 'manage') {
+    get('/api/monitor/list', data => list.value = data)
+  }
+}
 setInterval(updateList, 10000)
 updateList()
 
@@ -16,6 +34,7 @@ const detail = reactive({
   show: false,
   id: -1
 })
+
 const displayClientDetails = (id) => {
   detail.show = true
   detail.id = id
@@ -40,6 +59,14 @@ const refreshToken = () => get('/api/monitor/register', token => register.token 
       </div>
     </div>
     <el-divider style="margin: 10px 0"/>
+    <div style="margin-bottom: 20px">
+      <el-checkbox-group v-model="checkedNodes">
+        <el-checkbox v-for="node in locations" :key="node" :label="node.name" border>
+          <span :class="`flag-icon flag-icon-${node.name}`"></span>
+          <span style="font-size: 13px;margin-left: 10px">{{node.desc}}</span>
+        </el-checkbox>
+      </el-checkbox-group>
+    </div>
     <div class="card-list" v-if="list.length">
       <preview-card v-for="item in list" :data="item" :update="updateList"
                     @click="displayClientDetails(item.id)"/>

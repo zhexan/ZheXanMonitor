@@ -12,10 +12,12 @@ import com.example.myprojectbackend.utils.Const;
 import com.example.myprojectbackend.utils.FlowUtils;
 import jakarta.annotation.Resource;
 import org.springframework.amqp.core.AmqpTemplate;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 
@@ -34,6 +36,8 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, Account> impl
     StringRedisTemplate stringRedisTemplate;
     @Resource
     PasswordEncoder encoder;
+    @Autowired
+    private BCryptPasswordEncoder passwordEncoder;
 
     @Override
     public UserDetails loadUserByUsername(String username) throws UsernameNotFoundException {
@@ -95,6 +99,16 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, Account> impl
         }
         return update ? null : "内部错误";
 
+    }
+
+    @Override
+    public boolean changePassword(int id, String oldPass, String newPass) {
+        Account account = this.getById(id);
+        String password = account.getPassword();
+        if(!passwordEncoder.matches(oldPass, password))
+            return false;
+        this.update(Wrappers.<Account>update().eq("id", id).set("password", passwordEncoder.encode(newPass)));
+        return true;
     }
 
     private boolean verifyLimit(String ip) {
