@@ -12,6 +12,7 @@ import jakarta.annotation.Resource;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.security.access.AccessDeniedException;
@@ -80,9 +81,9 @@ public class securityConfiguration {
         String token = utils.createJWT(user, account.getId(), account.getUsername());
         AuthorizeVo vo = new AuthorizeVo();
         vo.setExpire(utils.expireTime());
-        vo.setRole(account.getRole());
         vo.setToken(token);
-        vo.setUsername(account.getUsername());
+        account.asViewObject(AuthorizeVo.class);
+        BeanUtils.copyProperties(account, vo);
         response.getWriter().write(RestBean.success(vo).asJSONString());
 
 

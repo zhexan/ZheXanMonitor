@@ -5,7 +5,6 @@ target/
 !**/src/test/**/target/
 zhexan-monitor-client/src/test/java/org/example/
 zhexan-monitor-server/src/test/java/com/example/myprojectbackend/
-zhexan-monitor-jwt/config/server.json
 ### STS ###
 .apt_generated
 .classpath
@@ -34,3 +33,4 @@ build/
 ### VS Code ###
 .vscode/
 .idea/
+/config/server.json

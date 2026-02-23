@@ -36,13 +36,11 @@ public class JWTAuthorizeFilter extends OncePerRequestFilter {
                                     @NotNull FilterChain filterChain)
             throws ServletException, IOException {
         String authorization = request.getHeader("Authorization");
-        log.info("authorization:{}", authorization);
         String uri = request.getRequestURI();
         log.info("uri:{}", uri);
         if (uri.startsWith("/monitor")) {
             if(!uri.endsWith("/register")) {
                 Client client = service.getClientByToken(authorization);
-                log.info("client:{}", client);
                 if (client == null) {
                     response.setStatus(401);
                     response.getWriter().write(RestBean.failure(401, "未注册").asJSONString());
@@ -59,8 +57,9 @@ public class JWTAuthorizeFilter extends OncePerRequestFilter {
                         new UsernamePasswordAuthenticationToken(user, null, user.getAuthorities());
                 authenticationToken.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));
                 SecurityContextHolder.getContext().setAuthentication(authenticationToken);
-                request.setAttribute("id", utils.toId(jwt));
+                request.setAttribute(Const.ATTR_USER_ID, utils.toId(jwt));
                 request.setAttribute(Const.ATTR_USER_ROLE, new ArrayList<>(user.getAuthorities()).get(0).getAuthority());
+                log.info("user:{}", user);
             }
         }
         filterChain.doFilter(request, response);

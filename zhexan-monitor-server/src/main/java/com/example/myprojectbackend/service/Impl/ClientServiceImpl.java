@@ -10,6 +10,7 @@ import com.example.myprojectbackend.entity.vo.request.RenameNodeVO;
 import com.example.myprojectbackend.entity.vo.request.RuntimeDetailVO;
 import com.example.myprojectbackend.entity.vo.response.ClientDetailsVO;
 import com.example.myprojectbackend.entity.vo.response.ClientPreviewVO;
+import com.example.myprojectbackend.entity.vo.response.ClientSimpleVO;
 import com.example.myprojectbackend.entity.vo.response.RuntimeHistoryVO;
 import com.example.myprojectbackend.mapper.ClientDetailMapper;
 import com.example.myprojectbackend.mapper.ClientMapper;
@@ -199,6 +200,15 @@ public class ClientServiceImpl extends ServiceImpl<ClientMapper, Client> impleme
         detailMapper.deleteById(clientId);
         this.initClientCache();
         currentRuntime.remove(clientId);
+    }
+
+    @Override
+    public List<ClientSimpleVO> listSimpleClientList() {
+        return clientIDCache.values().stream().map(client -> {
+            ClientSimpleVO vo = client.asViewObject(ClientSimpleVO.class);
+            BeanUtils.copyProperties(detailMapper.selectById(vo.getId()), vo);
+            return vo;
+        }).toList();
     }
 
     private void addClientCache(Client client) {

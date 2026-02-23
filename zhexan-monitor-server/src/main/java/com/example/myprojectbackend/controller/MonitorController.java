@@ -8,11 +8,14 @@ import com.example.myprojectbackend.entity.vo.request.RenameNodeVO;
 import com.example.myprojectbackend.entity.vo.request.RuntimeDetailVO;
 import com.example.myprojectbackend.entity.vo.response.ClientDetailsVO;
 import com.example.myprojectbackend.entity.vo.response.ClientPreviewVO;
+import com.example.myprojectbackend.entity.vo.response.ClientSimpleVO;
 import com.example.myprojectbackend.entity.vo.response.RuntimeHistoryVO;
+import com.example.myprojectbackend.service.AccountService;
 import com.example.myprojectbackend.service.ClientService;
 import com.example.myprojectbackend.utils.Const;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
+import jakarta.servlet.ServletRequest;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
@@ -27,10 +30,21 @@ public class MonitorController {
 
     @Resource
     ClientService clientService;
+    @Resource
+    AccountService accountService;
 
     @GetMapping("/list")
-    public RestBean<List<ClientPreviewVO>> ListAllClient() {
-        return RestBean.success(clientService.listClients());
+    public RestBean<List<ClientPreviewVO>> ListAllClient(@RequestAttribute(Const.ATTR_USER_ID) int userId,
+                                                         @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
+        List<ClientPreviewVO> clients = clientService.listClients();
+        if (this.isAdminAccount(userRole)) {
+            return RestBean.success(clientService.listClients());
+        } else {
+            List<Integer> ids = this.accountAccessClients(userId);
+            return RestBean.success(clients.stream()
+                    .filter(vo -> ids.contains(vo.getId()))
+                    .toList());
+        }
     }
 
     /**
@@ -39,9 +53,15 @@ public class MonitorController {
      * @since 2026-02-07
      */
     @PostMapping("/rename")
-    public RestBean<Void> RenameClient(@RequestBody @Valid RenameClientVO vo) {
-        clientService.renameClient(vo);
-        return RestBean.success();
+    public RestBean<Void> renameClient(@RequestBody @Valid RenameClientVO vo,
+                                       @RequestAttribute(Const.ATTR_USER_ID) int userId,
+                                       @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
+        if (this.permissionCheck(userId, userRole, vo.getId())) {
+            clientService.renameClient(vo);
+            return RestBean.success();
+        } else {
+            return RestBean.noPermission();
+        }
     }
 
     @PostMapping("/node")
@@ -51,25 +71,78 @@ public class MonitorController {
     }
 
     @GetMapping("/details")
-    public RestBean<ClientDetailsVO> returnDetails(int clientId) {
-        return RestBean.success(clientService.clientDetails(clientId));
+    public RestBean<ClientDetailsVO> details(int clientId,
+                                             @RequestAttribute(Const.ATTR_USER_ID) int userId,
+                                             @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
+        if(this.permissionCheck(userId, userRole, clientId)) {
+            return RestBean.success(clientService.clientDetails(clientId));
+        } else {
+            return RestBean.noPermission();
+        }
     }
 
     @GetMapping("/runtime-history")
-    public RestBean<RuntimeHistoryVO> runtimeDetailsHistory(int clientId) {
+    public RestBean<RuntimeHistoryVO> runtimeDetailsHistory(int clientId,
+                                                            @RequestAttribute(Const.ATTR_USER_ID) int userId,
+                                                            @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
+        if(this.permissionCheck(userId, userRole, clientId)) {
             return RestBean.success(clientService.clientRuntimeDetailsHistory(clientId));
+        } else {
+            return RestBean.noPermission();
+        }
     }
+
     @GetMapping("/runtime-now")
-    public RestBean<RuntimeDetailVO> runtimeDetailsNow(int clientId) {
-        return RestBean.success(clientService.clientRuntimeDetailsNow(clientId));
+    public RestBean<RuntimeDetailVO> runtimeDetailsNow(int clientId,
+                                                       @RequestAttribute(Const.ATTR_USER_ID) int userId,
+                                                       @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
+        if(this.permissionCheck(userId, userRole, clientId)) {
+            return RestBean.success(clientService.clientRuntimeDetailsNow(clientId));
+        } else {
+            return RestBean.noPermission();
+        }
     }
+
     @GetMapping("/register")
-    public RestBean<String> registerToken() {
-        return RestBean.success(clientService.registerToken());
+    public RestBean<String> registerToken(@RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
+        if (this.isAdminAccount(userRole)) {
+            return RestBean.success(clientService.registerToken());
+        } else {
+            return RestBean.noPermission();
+        }
     }
+
     @GetMapping("/delete")
-    public RestBean<Void> deleteClient(int clientId) {
-        clientService.deleteClient(clientId);
-        return RestBean.success();
+    public RestBean<String> deleteClient(int clientId,
+                                         @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
+        if (this.isAdminAccount(userRole)) {
+            clientService.deleteClient(clientId);
+            return RestBean.success();
+        } else {
+            return RestBean.noPermission();
+        }
+    }
+    @GetMapping("simple-list")
+    public RestBean<List<ClientSimpleVO>> simpleClientList(@RequestAttribute(Const.ATTR_USER_ROLE) String role) {
+        if (this.isAdminAccount(role)) {
+            return RestBean.success(clientService.listSimpleClientList());
+        } else {
+            return RestBean.noPermission();
+        }
+    }
+
+    private List<Integer> accountAccessClients(int userId) {
+        Account account = accountService.getById(userId);
+        return account.getClientList();
+    }
+
+    private boolean isAdminAccount(String role) {
+        role = role.substring(5);
+        return Const.ROLE_ADMIN.equals(role);
+    }
+
+    private boolean permissionCheck(int uid, String role, int clientId) {
+        if (this.isAdminAccount(role)) return true;
+        return this.accountAccessClients(uid).contains(clientId);
     }
 }

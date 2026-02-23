@@ -4,10 +4,7 @@ import com.alibaba.fastjson2.JSONArray;
 import com.baomidou.mybatisplus.core.toolkit.Wrappers;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.myprojectbackend.entity.dto.Account;
-import com.example.myprojectbackend.entity.vo.request.ConfirmResetVO;
-import com.example.myprojectbackend.entity.vo.request.CreateSubAccountVO;
-import com.example.myprojectbackend.entity.vo.request.EmailRegisterVO;
-import com.example.myprojectbackend.entity.vo.request.EmailResetVO;
+import com.example.myprojectbackend.entity.vo.request.*;
 import com.example.myprojectbackend.entity.vo.response.SubAccountVO;
 import com.example.myprojectbackend.mapper.AccountMapper;
 import com.example.myprojectbackend.service.AccountService;
@@ -115,16 +112,17 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, Account> impl
         return true;
     }
     @Override
-    public void createSubAccount(CreateSubAccountVO vo) {
+    public Map<Boolean, String> createSubAccount(CreateSubAccountVO vo) {
         Account account = this.findAccountByUsernameOrEmail(vo.getEmail());
         if(account != null)
-            throw new IllegalArgumentException("该电子邮件已被注册");
+            return Map.of(false, "该邮箱已被注册");
         account = this.findAccountByUsernameOrEmail(vo.getUsername());
         if(account != null)
-            throw new IllegalArgumentException("该用户名已被注册");
+            return Map.of(false, "改用户名已被注册");
         account = new Account(null, vo.getUsername(), passwordEncoder.encode(vo.getPassword()),
                 vo.getEmail(), Const.ROLE_NORMAL, new Date(), JSONArray.copyOf(vo.getClients()).toJSONString());
         this.save(account);
+        return Map.of(true, "改邮箱注册成功");
     }
 
     @Override
@@ -142,6 +140,21 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, Account> impl
                     return vo;
                 }).toList();
     }
+    @Override
+    public String modifyEmail(int id, ModifyEmailVO vo) {
+        String code = getEmailVerifyCode(vo.getEmail());
+        if (code == null) return "请先获取验证码";
+        if(!code.equals(vo.getCode())) return "验证码错误，请重新输入";
+        this.deleteEmailVerifyCode(vo.getEmail());
+        Account account = this.findAccountByUsernameOrEmail(vo.getEmail());
+        if(account != null && account.getId() != id) return "该邮箱账号已经被其他账号绑定，无法完成操作";
+        this.update()
+                .set("email", vo.getEmail())
+                .eq("id", id)
+                .update();
+        return null;
+    }
+
 
     private boolean verifyLimit(String ip) {
         String key = Const.VERIFY_EMAIL_LIMIT + ip;
