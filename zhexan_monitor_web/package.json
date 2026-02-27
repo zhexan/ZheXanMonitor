@@ -9,10 +9,12 @@
   },
   "dependencies": {
     "@element-plus/icons-vue": "^2.1.0",
+    "@fortawesome/fontawesome-free": "^7.2.0",
     "@vueuse/core": "^10.3.0",
     "axios": "^1.4.0",
     "echarts": "^6.0.0",
     "element-plus": "^2.3.9",
+    "flag-icon-css": "^4.1.7",
     "flag-icons": "^7.5.0",
     "pinia": "^3.0.4",
     "pinia-plugin-persistedstate": "^4.7.1",

@@ -67,7 +67,7 @@ function rename(id, name, after) {
         confirmButtonText: '确认',
         cancelButtonText: '取消',
         inputValue: name,
-        inputPattern: /^[a-zA-Z0-9_\u4e00-\u9fa5]{1,10}$/,
+        inputPattern: /^[a-zA-Z0-9_\u4e00-\u9fa5]{1,30}$/,
         inputErrorMessage: '名称只能包含中英文字符、数字和下划线',
     }).then(({ value }) => post('/api/monitor/rename', {
             id: id,
