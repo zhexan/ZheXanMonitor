@@ -24,6 +24,7 @@ public class NetUtils {
     @Lazy
     @Resource
     ConnectConfig config;
+
     public boolean registerToServer(String address, String token) {
         log.info("正在向服务端注册");
         Response response = this.doGet("/register", address, token);

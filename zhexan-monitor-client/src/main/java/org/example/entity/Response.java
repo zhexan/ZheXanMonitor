@@ -7,7 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 public record Response(int id, int code, Object data, String massage) {
 
     public boolean success() {
-        log.info(String.valueOf(code));
         return code == 200;
     }
 

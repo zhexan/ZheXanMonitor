@@ -44,6 +44,7 @@ public class securityConfiguration {
        log.info("执行security");
         return http
                 .authorizeHttpRequests(conf -> conf
+                        .requestMatchers("/terminal/**").permitAll()
                         .requestMatchers("api/auth/**", "/error").permitAll()
                         .requestMatchers("/monitor/**").permitAll()
                         .requestMatchers("api/user/sub/*").hasRole(Const.ROLE_ADMIN)

@@ -2,14 +2,8 @@ package com.example.myprojectbackend.service;
 
 import com.baomidou.mybatisplus.extension.service.IService;
 import com.example.myprojectbackend.entity.dto.Client;
-import com.example.myprojectbackend.entity.vo.request.ClientDetailVO;
-import com.example.myprojectbackend.entity.vo.request.RenameClientVO;
-import com.example.myprojectbackend.entity.vo.request.RenameNodeVO;
-import com.example.myprojectbackend.entity.vo.request.RuntimeDetailVO;
-import com.example.myprojectbackend.entity.vo.response.ClientDetailsVO;
-import com.example.myprojectbackend.entity.vo.response.ClientPreviewVO;
-import com.example.myprojectbackend.entity.vo.response.ClientSimpleVO;
-import com.example.myprojectbackend.entity.vo.response.RuntimeHistoryVO;
+import com.example.myprojectbackend.entity.vo.request.*;
+import com.example.myprojectbackend.entity.vo.response.*;
 
 import java.util.List;
 
@@ -28,4 +22,6 @@ public interface ClientService extends IService<Client> {
     RuntimeDetailVO clientRuntimeDetailsNow(int clientId);
     void deleteClient(int clientId);
     List<ClientSimpleVO> listSimpleClientList();
+    void saveClientSshConnection(SshConnectionVO vo);
+    SshSettingsVO sshSettings(int clientId);
 }

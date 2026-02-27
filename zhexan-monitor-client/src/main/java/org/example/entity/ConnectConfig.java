@@ -9,4 +9,5 @@ import lombok.Data;
 public class ConnectConfig {
     String address;
     String token;
+    String networkInterface;
 }

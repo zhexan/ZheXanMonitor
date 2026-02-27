@@ -1,26 +1,30 @@
 package org.example.utils;
 
 import lombok.extern.slf4j.Slf4j;
-import org.example.entity.BaseDetail;
-import org.example.entity.RuntimeDetail;
-import org.springframework.stereotype.Component;
 import oshi.SystemInfo;
-import oshi.hardware.CentralProcessor;
-import oshi.hardware.HWDiskStore;
-import oshi.hardware.HardwareAbstractionLayer;
-import oshi.hardware.NetworkIF;
+import oshi.hardware.*;
+import org.example.entity.BaseDetail;
+import org.example.entity.ConnectConfig;
+import org.example.entity.RuntimeDetail;
+import org.springframework.context.annotation.Lazy;
+import org.springframework.stereotype.Component;
+
+import jakarta.annotation.Resource;
 import oshi.software.os.OperatingSystem;
 
 import java.io.File;
-import java.net.NetworkInterface;
 import java.util.Arrays;
 import java.util.Date;
-import java.util.Objects;
+import java.util.List;
 import java.util.Properties;
+import java.io.IOException;
 
 @Slf4j
 @Component
 public class MonitorUtils {
+    @Lazy
+    @Resource
+    ConnectConfig config;
     private final SystemInfo info = new SystemInfo();
     private final Properties properties = System.getProperties();
 
@@ -29,7 +33,16 @@ public class MonitorUtils {
         HardwareAbstractionLayer hardware = info.getHardware();
         double memory = hardware.getMemory().getTotal() / 1024.0 / 1024 /1024;
         double diskSize = Arrays.stream(File.listRoots()).mapToLong(File::getTotalSpace).sum() / 1024.0 / 1024 /1024;
-        String ip = Objects.requireNonNull(this.findNetworkInterface(hardware)).getIPv4addr()[0];
+        
+        // 处理网络接口可能为空的情况
+        NetworkIF networkInterface = this.findNetworkInterface(hardware);
+        String ip = "unknown";
+        if (networkInterface != null && networkInterface.getIPv4addr() != null && networkInterface.getIPv4addr().length > 0) {
+            ip = networkInterface.getIPv4addr()[0];
+        } else {
+            log.warn("无法获取有效的IP地址，使用默认值");
+        }
+        
         return new BaseDetail()
                 .setOsArch(properties.getProperty("os.arch"))
                 .setOsName(os.getFamily())
@@ -53,7 +66,11 @@ public class MonitorUtils {
         double statisticTime = 0.5;
         try {
             HardwareAbstractionLayer hardware = info.getHardware();
-            NetworkIF networkInterface = Objects.requireNonNull(this.findNetworkInterface(hardware));
+            NetworkIF networkInterface = this.findNetworkInterface(hardware);
+            if (networkInterface == null) {
+                log.error("无法获取网络接口信息");
+                return null;
+            }
             CentralProcessor processor = hardware.getProcessor();
             // 读取网络上传和下载数据
             double upload = networkInterface.getBytesSent(),download = networkInterface.getBytesRecv();
@@ -65,7 +82,11 @@ public class MonitorUtils {
             // 线程休眠5秒
             Thread.sleep((long) (statisticTime *1000));
             // 读取5秒后的数据, 并进行计算
-            networkInterface = Objects.requireNonNull(this.findNetworkInterface(hardware));
+            networkInterface = this.findNetworkInterface(hardware);
+            if (networkInterface == null) {
+                log.error("无法获取网络接口信息");
+                return null;
+            }
             upload = (networkInterface.getBytesSent() - upload) / statisticTime;
             download = (networkInterface.getBytesRecv() - download) / statisticTime;
             read = (hardware.getDiskStores().stream().mapToLong(HWDiskStore::getReadBytes).sum() - read) / statisticTime;
@@ -118,20 +139,40 @@ public class MonitorUtils {
         return (cSys + cUser) * 1.0 / totalCpu;
     }
 
+    public List<String> listNetworkInterfaceName() {
+        HardwareAbstractionLayer hardware = info.getHardware();
+        return hardware.getNetworkIFs()
+                .stream()
+                .map(NetworkIF::getName)
+                .toList();
+    }
+
     private NetworkIF findNetworkInterface(HardwareAbstractionLayer hardware) {
-            try{
-               for (NetworkIF network : hardware.getNetworkIFs()) {
-                   String[] ipv4Addr = network.getIPv4addr();
-                   NetworkInterface ni = network.queryNetworkInterface();
-                   if(!ni.isLoopback() && !ni.isPointToPoint() && !ni.isVirtual() && ni.isUp()
-                           && (ni.getName().startsWith("eth") || ni.getName().startsWith("eh"))
-                           && ipv4Addr.length > 0) {
-                       return network;
-                   }
-               }
-            } catch (Exception e) {
-                log.error("获取网络接口信息出错", e);
+        try {
+            // 检查config是否为null
+            if (config == null) {
+                log.warn("ConnectConfig未初始化，使用默认网络接口");
+                List<NetworkIF> networkIFs = hardware.getNetworkIFs();
+                if (!networkIFs.isEmpty()) {
+                    return networkIFs.get(0);
+                } else {
+                    throw new IOException("未找到任何网络接口");
+                }
             }
-            return null;
+            
+            String target = config.getNetworkInterface();
+            List<NetworkIF> ifs = hardware.getNetworkIFs()
+                    .stream()
+                    .filter(inter -> inter.getName().equals(target))
+                    .toList();
+            if (!ifs.isEmpty()) {
+                return ifs.get(0);
+            } else {
+                throw new IOException("网卡信息错误，找不到网卡: " + target);
+            }
+        } catch (IOException e) {
+            log.error("读取网络接口信息时出错", e);
+        }
+        return null;
     }
 }

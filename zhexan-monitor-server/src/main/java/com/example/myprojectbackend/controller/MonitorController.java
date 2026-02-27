@@ -6,10 +6,8 @@ import com.example.myprojectbackend.entity.dto.Account;
 import com.example.myprojectbackend.entity.vo.request.RenameClientVO;
 import com.example.myprojectbackend.entity.vo.request.RenameNodeVO;
 import com.example.myprojectbackend.entity.vo.request.RuntimeDetailVO;
-import com.example.myprojectbackend.entity.vo.response.ClientDetailsVO;
-import com.example.myprojectbackend.entity.vo.response.ClientPreviewVO;
-import com.example.myprojectbackend.entity.vo.response.ClientSimpleVO;
-import com.example.myprojectbackend.entity.vo.response.RuntimeHistoryVO;
+import com.example.myprojectbackend.entity.vo.request.SshConnectionVO;
+import com.example.myprojectbackend.entity.vo.response.*;
 import com.example.myprojectbackend.service.AccountService;
 import com.example.myprojectbackend.service.ClientService;
 import com.example.myprojectbackend.utils.Const;
@@ -126,6 +124,28 @@ public class MonitorController {
     public RestBean<List<ClientSimpleVO>> simpleClientList(@RequestAttribute(Const.ATTR_USER_ROLE) String role) {
         if (this.isAdminAccount(role)) {
             return RestBean.success(clientService.listSimpleClientList());
+        } else {
+            return RestBean.noPermission();
+        }
+    }
+    @PostMapping("/ssh-save")
+    public RestBean<Void> saveSshConnection(@RequestBody @Valid SshConnectionVO vo,
+                                            @RequestAttribute(Const.ATTR_USER_ID) int userId,
+                                            @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
+        if(this.permissionCheck(userId, userRole, vo.getId())) {
+            clientService.saveClientSshConnection(vo);
+            return RestBean.success();
+        } else {
+            return RestBean.noPermission();
+        }
+    }
+
+    @GetMapping("/ssh")
+    public RestBean<SshSettingsVO> sshSettings(int clientId,
+                                               @RequestAttribute(Const.ATTR_USER_ID) int userId,
+                                               @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
+        if(this.permissionCheck(userId, userRole, clientId)) {
+            return RestBean.success(clientService.sshSettings(clientId));
         } else {
             return RestBean.noPermission();
         }
