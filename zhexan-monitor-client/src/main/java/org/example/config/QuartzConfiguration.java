@@ -12,6 +12,11 @@ import org.springframework.scheduling.quartz.QuartzJobBean;
 @Configuration
 public class QuartzConfiguration {
 
+    /**
+     * 创建监控任务的JobDetail Bean
+     * 
+     * @return JobDetail 监控任务的详细配置对象
+     */
     @Bean
     public JobDetail jobDetailFactoryBean() {
         return JobBuilder.newJob(MonitorJobBean.class)
@@ -20,6 +25,12 @@ public class QuartzConfiguration {
                 .build();
     }
 
+    /**
+     * 创建监控任务的Cron触发器Bean
+     * 
+     * @param detail 关联的JobDetail对象
+     * @return Trigger Cron触发器配置对象
+     */
     @Bean
     public Trigger cronTriggerFactoryBean(JobDetail detail) {
         CronScheduleBuilder cron =  CronScheduleBuilder.cronSchedule("*/10 * * * * ?");
