@@ -8,7 +8,7 @@ import com.example.entity.vo.request.RenameNodeVO;
 import com.example.entity.vo.request.RuntimeDetailVO;
 import com.example.entity.vo.request.SshConnectionVO;
 import com.example.entity.vo.response.*;
-import com.example.myprojectbackend.entity.vo.response.*;
+import com.example.entity.vo.response.*;
 import com.example.service.AccountService;
 import com.example.service.ClientService;
 import com.example.utils.Const;

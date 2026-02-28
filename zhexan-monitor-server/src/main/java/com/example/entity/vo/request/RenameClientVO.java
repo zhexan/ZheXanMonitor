@@ -8,6 +8,6 @@ import org.hibernate.validator.constraints.Length;
 public class RenameClientVO {
     @NotNull
     int id;
-    @Length(min = 1, max = 10)
+    @Length(min = 1, max = 30)
     String name;
 }

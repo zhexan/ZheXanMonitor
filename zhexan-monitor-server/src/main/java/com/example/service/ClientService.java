@@ -4,8 +4,8 @@ import com.baomidou.mybatisplus.extension.service.IService;
 import com.example.entity.dto.Client;
 import com.example.entity.vo.request.*;
 import com.example.entity.vo.response.*;
-import com.example.myprojectbackend.entity.vo.request.*;
-import com.example.myprojectbackend.entity.vo.response.*;
+import com.example.entity.vo.request.*;
+import com.example.entity.vo.response.*;
 
 import java.util.List;
 

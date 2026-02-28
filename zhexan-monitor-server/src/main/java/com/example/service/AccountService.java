@@ -6,7 +6,7 @@ import com.example.entity.vo.request.ConfirmResetVO;
 import com.example.entity.vo.request.CreateSubAccountVO;
 import com.example.entity.vo.request.EmailResetVO;
 import com.example.entity.vo.request.ModifyEmailVO;
-import com.example.myprojectbackend.entity.vo.request.*;
+import com.example.entity.vo.request.*;
 import com.example.entity.vo.response.SubAccountVO;
 import org.springframework.security.core.userdetails.UserDetailsService;
 

@@ -41,7 +41,6 @@ public class securityConfiguration {
 
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
-       log.info("执行security");
         return http
                 .authorizeHttpRequests(conf -> conf
                         .requestMatchers("/terminal/**").permitAll()
