@@ -6,7 +6,6 @@ import org.example.task.MonitorJobBean;
 import org.quartz.*;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
-import org.springframework.scheduling.quartz.QuartzJobBean;
 
 @Slf4j
 @Configuration
@@ -33,6 +32,7 @@ public class QuartzConfiguration {
      */
     @Bean
     public Trigger cronTriggerFactoryBean(JobDetail detail) {
+        // 每10秒执行一次
         CronScheduleBuilder cron =  CronScheduleBuilder.cronSchedule("*/10 * * * * ?");
         return TriggerBuilder.newTrigger()
                 .forJob(detail)

@@ -79,9 +79,9 @@ public class MonitorUtils {
             double write = hardware.getDiskStores().stream().mapToLong(HWDiskStore::getWriteBytes).sum();
             // 读取cpu信息
             long[] ticks = processor.getSystemCpuLoadTicks();
-            // 线程休眠5秒
+            // 线程休眠0.5秒
             Thread.sleep((long) (statisticTime *1000));
-            // 读取5秒后的数据, 并进行计算
+            // 读取0.5秒后的数据, 并进行计算
             networkInterface = this.findNetworkInterface(hardware);
             if (networkInterface == null) {
                 log.error("无法获取网络接口信息");

@@ -20,5 +20,5 @@ public class RuntimeDetailVO {
     @NotNull
     double diskRead;
     @NotNull
-    double disKWrite;
+    double diskWrite;
 }

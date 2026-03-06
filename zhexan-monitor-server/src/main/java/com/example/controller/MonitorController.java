@@ -8,15 +8,17 @@ import com.example.entity.vo.request.RenameNodeVO;
 import com.example.entity.vo.request.RuntimeDetailVO;
 import com.example.entity.vo.request.SshConnectionVO;
 import com.example.entity.vo.response.*;
-import com.example.entity.vo.response.*;
 import com.example.service.AccountService;
 import com.example.service.ClientService;
+import com.example.service.AnomalyDetectionService;
 import com.example.utils.Const;
 import jakarta.annotation.Resource;
 import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
+import java.util.HashMap;
 
 /**
  * @since 2026-02-02
@@ -29,6 +31,8 @@ public class MonitorController {
     ClientService clientService;
     @Resource
     AccountService accountService;
+    @Resource
+    AnomalyDetectionService anomalyDetectionService;
 
     @GetMapping("/list")
     public RestBean<List<ClientPreviewVO>> ListAllClient(@RequestAttribute(Const.ATTR_USER_ID) int userId,
@@ -155,13 +159,59 @@ public class MonitorController {
         return account.getClientList();
     }
 
-    private boolean isAdminAccount(String role) {
-        role = role.substring(5);
-        return Const.ROLE_ADMIN.equals(role);
-    }
-
     private boolean permissionCheck(int uid, String role, int clientId) {
         if (this.isAdminAccount(role)) return true;
         return this.accountAccessClients(uid).contains(clientId);
     }
+    private boolean isAdminAccount(String role) {
+        role = role.substring(5);
+        return Const.ROLE_ADMIN.equals(role);
+    }
+    
+//    /**
+//     * 获取异常检测模型状态
+//     * @param clientId 客户端 ID
+//     * @param userId 用户 ID
+//     * @param userRole 用户角色
+//     * @return 模型状态信息
+//     */
+//    @GetMapping("/anomaly-status")
+//    public RestBean<Map<String, Object>> getAnomalyStatus(@RequestParam int clientId,
+//                                                         @RequestAttribute(Const.ATTR_USER_ID) int userId,
+//                                                         @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
+//        if(this.permissionCheck(userId, userRole, clientId)) {
+//            boolean isTrained = anomalyDetectionService.isModelTrained(clientId);
+//            Map<String, Object> status = new HashMap<>();
+//            status.put("trained", isTrained);
+//            status.put("clientId", clientId);
+//
+//            if (isTrained) {
+//                // 获取历史数据量
+//                RuntimeHistoryVO history = clientService.clientRuntimeDetailsHistory(clientId);
+//                int dataCount = (history != null && history.getRuntimeDataList() != null)
+//                               ? history.getRuntimeDataList().size() : 0;
+//
+//                status.put("dataCount", dataCount);
+//                status.put("status", "ready");
+//                status.put("message", "模型已就绪，正在执行异常检测");
+//            } else {
+//                // 获取当前数据量
+//                RuntimeHistoryVO history = clientService.clientRuntimeDetailsHistory(clientId);
+//                int dataCount = (history != null && history.getRuntimeDataList() != null)
+//                               ? history.getRuntimeDataList().size() : 0;
+//
+//                status.put("dataCount", dataCount);
+//                status.put("status", dataCount >= 100 ? "training" : "waiting");
+//                status.put("message", dataCount >= 100
+//                                   ? "数据量已达标，正在初始化训练模型"
+//                                   : "等待数据累积，需要至少 100 条历史数据");
+//                status.put("requiredDataCount", 100);
+//                status.put("remainingData", Math.max(0, 100 - dataCount));
+//            }
+//
+//            return RestBean.success(status);
+//        } else {
+//            return RestBean.noPermission();
+//        }
+//    }
 }
