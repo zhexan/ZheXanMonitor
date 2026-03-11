@@ -30,5 +30,5 @@ public class RuntimeData {
     @Column
     double diskRead;
     @Column
-    double disKWrite;
+    double diskWrite;
 }

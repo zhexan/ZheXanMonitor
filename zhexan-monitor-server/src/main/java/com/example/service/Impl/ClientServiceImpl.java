@@ -7,11 +7,10 @@ import com.example.entity.dto.ClientDetail;
 import com.example.entity.dto.ClientSsh;
 import com.example.entity.vo.request.*;
 import com.example.entity.vo.response.*;
-import com.example.entity.vo.request.*;
-import com.example.entity.vo.response.*;
 import com.example.mapper.ClientDetailMapper;
 import com.example.mapper.ClientMapper;
 import com.example.mapper.SshMapper;
+import com.example.service.AnomalyDetectionService;
 import com.example.service.ClientService;
 import com.example.utils.InfluxDBUtils;
 import jakarta.annotation.PostConstruct;
@@ -38,6 +37,9 @@ public class ClientServiceImpl extends ServiceImpl<ClientMapper, Client> impleme
     InfluxDBUtils influx;
     @Resource
     SshMapper sshMapper;
+    
+    @Resource
+    AnomalyDetectionService anomalyDetectionService;
 
     @PostConstruct
     public void initClientCache() {
@@ -117,7 +119,15 @@ public class ClientServiceImpl extends ServiceImpl<ClientMapper, Client> impleme
     public void updateRuntimeDetail(RuntimeDetailVO vo, Client client) {
         currentRuntime.put(client.getId(), vo);
         influx.writeRuntimeData(client.getId(), vo);
-
+        
+        // 如果模型已训练，将新数据添加到缓冲区用于增量更新
+        if (anomalyDetectionService.isModelTrained(client.getId())) {
+            try {
+                anomalyDetectionService.updateModel(client.getId(), List.of(vo));
+            } catch (Exception e) {
+                log.debug("添加数据到模型缓冲区失败：{}", e.getMessage());
+            }
+        }
     }
 
     @Override
@@ -190,6 +200,16 @@ public class ClientServiceImpl extends ServiceImpl<ClientMapper, Client> impleme
     public RuntimeDetailVO clientRuntimeDetailsNow(int clientId) {
         return currentRuntime.get(clientId);
     }
+
+    @Override
+    public RuntimeDetailVO clientRuntimeDetailsAnomalyDetect(int clientId) {
+        RuntimeDetailVO vo = currentRuntime.get(clientId);
+        ClientDetail clientDetail =  detailMapper.selectById(clientId);
+        vo.setDiskUsage(vo.getDiskUsage()/ clientDetail.getDisk());
+        vo.setMemoryUsage(vo.getMemoryUsage() / clientDetail.getMemory());
+        return vo;
+    }
+
     private boolean isOnline(RuntimeDetailVO runtime) {
         return runtime != null && System.currentTimeMillis() - runtime.getTimestamp() < 60 * 1000;
     }
@@ -235,6 +255,17 @@ public class ClientServiceImpl extends ServiceImpl<ClientMapper, Client> impleme
         }
         vo.setIp(detail.getIp());
         return vo;
+    }
+
+    @Override
+    public List<ModelTrainingDataVO> getModelTrainingData(int clientId) {
+        ClientDetail detail = detailMapper.selectById(clientId);
+        if (detail == null) {
+            log.warn("客户端 {} 的详细信息不存在", clientId);
+            return new LinkedList<>();
+        }
+
+        return influx.getTrainingData(clientId, detail.getMemory(), detail.getDisk());
     }
 
     private void addClientCache(Client client) {

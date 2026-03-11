@@ -19,8 +19,10 @@ public interface ClientService extends IService<Client> {
     ClientDetailsVO clientDetails(int id);
     RuntimeHistoryVO clientRuntimeDetailsHistory(int clientId);
     RuntimeDetailVO clientRuntimeDetailsNow(int clientId);
+    RuntimeDetailVO clientRuntimeDetailsAnomalyDetect(int clientId);
     void deleteClient(int clientId);
     List<ClientSimpleVO> listSimpleClientList();
     void saveClientSshConnection(SshConnectionVO vo);
     SshSettingsVO sshSettings(int clientId);
+    List<ModelTrainingDataVO> getModelTrainingData(int clientId);
 }

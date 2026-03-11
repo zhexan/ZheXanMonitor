@@ -3,7 +3,12 @@ package com.example.service.Impl;
 import com.example.entity.vo.request.RuntimeDetailVO;
 import com.example.entity.vo.response.AnomalyResultVO;
 import com.example.service.AnomalyDetectionService;
+import com.example.utils.ModelPersistenceUtil;
+import jakarta.annotation.PostConstruct;
+import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.BeanUtils;
+import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Service;
 import smile.anomaly.IsolationForest;
 
@@ -33,11 +38,15 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
     private final Map<Integer, double[]> minValuesMap = new ConcurrentHashMap<>();
     private final Map<Integer, double[]> maxValuesMap = new ConcurrentHashMap<>();
     
-    // 存储每个客户端的新增数据缓冲区
+    // 存储每个客户端的新增数据缓冲区（带锁的缓冲区）
     private final Map<Integer, List<RuntimeDetailVO>> newDataBufferMap = new ConcurrentHashMap<>();
     
+    // 存储每个客户端的缓冲区锁
+    private final Map<Integer, Object> bufferLocks = new ConcurrentHashMap<>();
+    
     // 最大缓冲数据量（达到此数量自动触发重训练）
-    private static final int MAX_BUFFER_SIZE = 50;
+    // 优化：降低到 20 条，配合 5 分钟频率和每次 10 条数据，约 10 分钟触发一次重训练
+    private static final int MAX_BUFFER_SIZE = 20;
     
     // 重训练的最小数据量（保证新旧数据比例合理）
     private static final int MIN_RETRAIN_SIZE = 150;
@@ -47,8 +56,8 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
 
     // 特征权重（用于放大 CPU 和内存的重要性）
     private static final double[] FEATURE_WEIGHTS = {
-            2.0,  // CPU 使用率 - 提高权重
-            2.0,  // 内存使用率 - 提高权重
+            1.5,  // CPU 使用率 - 提高权重
+            1.5,  // 内存使用率 - 提高权重
             1.0,  // 磁盘使用率
             0.8,  // 网络上传 - 降低权重
             0.8,  // 网络下载 - 降低权重
@@ -58,6 +67,41 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
 
     // 默认异常阈值
     private static final double DEFAULT_THRESHOLD = 0.6;
+
+    @Resource
+    private ModelPersistenceUtil modelPersistenceUtil;
+
+    @PostConstruct
+    public void loadModelsFromRedis() {
+        log.info("开始从 Redis 加载异常检测模型...");
+        try {
+            List<Integer> savedClientIds = modelPersistenceUtil.getSavedClientIds();
+            log.info("发现 {} 个已保存的模型", savedClientIds.size());
+
+            for (Integer clientId : savedClientIds) {
+                try {
+                    ModelPersistenceUtil.ModelData modelData = modelPersistenceUtil.loadModel(clientId);
+                    if (modelData != null) {
+                        Object obj = modelPersistenceUtil.deserializeObject(modelData.getModelData());
+                        if (obj instanceof IsolationForest) {
+                            IsolationForest model = (IsolationForest) obj;
+                            modelMap.put(clientId, model);
+                            minValuesMap.put(clientId, modelData.getMinValues());
+                            maxValuesMap.put(clientId, modelData.getMaxValues());
+                            thresholdMap.put(clientId, modelData.getThreshold());
+                            log.info("客户端 {} 的模型加载成功，阈值: {}", clientId, modelData.getThreshold());
+                        }
+                    }
+                } catch (Exception e) {
+                    log.error("加载客户端 {} 的模型失败", clientId, e);
+                }
+            }
+
+            log.info("模型加载完成，共加载 {} 个模型", modelMap.size());
+        } catch (Exception e) {
+            log.error("从 Redis 加载模型时发生错误", e);
+        }
+    }
 
     @Override
     public void trainModel(int clientId, List<RuntimeDetailVO> historyData) {
@@ -103,6 +147,14 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
             double dynamicThreshold = calculateDynamicThreshold(normalizedArray, isolationForest);
             thresholdMap.put(clientId, dynamicThreshold);
 
+            // 保存模型到 Redis
+            try {
+                byte[] modelBytes = modelPersistenceUtil.serializeObject(isolationForest);
+                modelPersistenceUtil.saveModel(clientId, modelBytes, minValues, maxValues, dynamicThreshold);
+            } catch (Exception e) {
+                log.warn("保存模型到 Redis 失败，将仅使用内存存储", e);
+            }
+
             log.info("客户端 {} 的孤立森林模型训练完成，动态阈值：{}", clientId, String.format("%.4f", dynamicThreshold));
             log.info("归一化参数 - CPU: [{}, {}], 内存：[{}, {}]",
                     minValues[0], maxValues[0], minValues[1], maxValues[1]);
@@ -145,18 +197,10 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
 
             // 构建结果
             AnomalyResultVO result = new AnomalyResultVO();
-            result.setTimestamp(runtimeData.getTimestamp());
             result.setAnomalyScore(anomalyScore);
             result.setAnomaly(isAnomaly);
             result.setThreshold(threshold);
-            result.setCpuUsage(runtimeData.getCpuUsage());
-            result.setMemoryUsage(runtimeData.getMemoryUsage());
-            result.setDiskUsage(runtimeData.getDiskUsage());
-            result.setNetworkUpload(runtimeData.getNetworkUpload());
-            result.setNetworkDownload(runtimeData.getNetworkDownload());
-            result.setDiskRead(runtimeData.getDiskRead());
-            result.setDiskWrite(runtimeData.getDiskWrite());
-
+            BeanUtils.copyProperties(runtimeData, result);
             // 设置异常描述
             if (isAnomaly) {
                 result.setDescription(generateAnomalyDescription(runtimeData, anomalyScore));
@@ -192,28 +236,33 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
             throw new IllegalStateException("模型未训练");
         }
         
-        try {
-            // 将新数据添加到缓冲区
-            newDataBufferMap.computeIfAbsent(clientId, k -> new ArrayList<>()).addAll(newData);
-            List<RuntimeDetailVO> buffer = newDataBufferMap.get(clientId);
-            
-            log.info("客户端 {} 新增 {} 条数据，当前缓冲区数据量：{}", 
-                    clientId, newData.size(), buffer.size());
-            
-            // 检查是否需要触发重训练
-            if (buffer.size() >= MAX_BUFFER_SIZE) {
-                log.info("客户端 {} 的缓冲区数据量达到阈值，触发增量重训练", clientId);
-                retrainWithIncrementalData(clientId);
+        // 获取或创建该客户端的锁
+        Object lock = bufferLocks.computeIfAbsent(clientId, k -> new Object());
+        
+        synchronized (lock) {
+            try {
+                // 将新数据添加到缓冲区
+                newDataBufferMap.computeIfAbsent(clientId, k -> new ArrayList<>()).addAll(newData);
+                List<RuntimeDetailVO> buffer = newDataBufferMap.get(clientId);
+                
+                log.info("客户端 {} 新增 {} 条数据，当前缓冲区数据量：{}", 
+                        clientId, newData.size(), buffer.size());
+                
+                // 检查是否需要触发重训练
+                if (buffer.size() >= MAX_BUFFER_SIZE) {
+                    log.info("客户端 {} 的缓冲区数据量达到阈值，触发增量重训练", clientId);
+                    retrainWithIncrementalData(clientId);
+                }
+                
+            } catch (Exception e) {
+                log.error("增量更新模型时发生错误，客户端 ID: {}", clientId, e);
+                throw new RuntimeException("增量更新失败：" + e.getMessage(), e);
             }
-            
-        } catch (Exception e) {
-            log.error("增量更新模型时发生错误，客户端 ID: {}", clientId, e);
-            throw new RuntimeException("增量更新失败：" + e.getMessage(), e);
         }
     }
     
     /**
-     * 使用增量数据重新训练模型
+     * 使用增量数据重新训练模型（需要先获取锁）
      */
     private void retrainWithIncrementalData(int clientId) {
         List<RuntimeDetailVO> originalData = trainingDataMap.get(clientId);
@@ -224,9 +273,13 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
             return;
         }
         
+        // 复制缓冲区数据后再清空，避免并发问题
+        List<RuntimeDetailVO> bufferCopy = new ArrayList<>(newDataBuffer);
+        newDataBuffer.clear();
+        
         // 合并旧数据和新数据
         List<RuntimeDetailVO> combinedData = new ArrayList<>(originalData);
-        combinedData.addAll(newDataBuffer);
+        combinedData.addAll(bufferCopy);
         
         // 如果总数据量过大，采用滑动窗口策略，保留最新的 N 条数据
         if (combinedData.size() > MIN_RETRAIN_SIZE) {
@@ -237,9 +290,6 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
             log.info("客户端 {} 合并后数据量过大，采用滑动窗口保留最新 {} 条数据", 
                     clientId, combinedData.size());
         }
-        
-        // 清空缓冲区
-        newDataBuffer.clear();
         
         // 使用合并后的数据重新训练
         log.info("客户端 {} 开始增量重训练，总数据量：{}", clientId, combinedData.size());
@@ -256,6 +306,15 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
         minValuesMap.remove(clientId);
         maxValuesMap.remove(clientId);
         newDataBufferMap.remove(clientId);
+        bufferLocks.remove(clientId);
+        
+        // 从 Redis 删除模型
+        try {
+            modelPersistenceUtil.deleteModel(clientId);
+        } catch (Exception e) {
+            log.warn("从 Redis 删除模型失败", e);
+        }
+        
         log.info("已清除客户端 {} 的孤立森林模型", clientId);
     }
 
@@ -382,8 +441,8 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
         // 排序
         Arrays.sort(scores);
 
-        // 取上侧 15% 分位数作为阈值（即 85% 的训练数据分数低于此值）
-        int thresholdIndex = (int) (scores.length * 0.94);
+        // 取上侧 10% 分位数作为阈值（即 90% 的训练数据分数低于此值）
+        int thresholdIndex = (int) (scores.length * 0.90);
         return scores[Math.min(thresholdIndex, scores.length - 1)];
     }
 
@@ -392,6 +451,7 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
      */
     private String generateAnomalyDescription(RuntimeDetailVO data, double score) {
         StringBuilder description = new StringBuilder();
+        log.info("异常数据: {}", data.toString());
         description.append(String.format("检测到异常行为 (异常分数：%.3f)", score));
 
         // 检查各项指标是否超出正常范围
@@ -415,15 +475,68 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
      * 检查数据质量
      */
     private boolean isDataQualityPoor(List<RuntimeDetailVO> data) {
-        // 检查是否有足够的变化
+        if (data == null || data.isEmpty()) {
+            return true;
+        }
+        
+        // 提取所有特征的值
         double[] cpuValues = data.stream().mapToDouble(RuntimeDetailVO::getCpuUsage).toArray();
         double[] memoryValues = data.stream().mapToDouble(RuntimeDetailVO::getMemoryUsage).toArray();
+        double[] diskValues = data.stream().mapToDouble(RuntimeDetailVO::getDiskUsage).toArray();
+        double[] networkUploadValues = data.stream().mapToDouble(RuntimeDetailVO::getNetworkUpload).toArray();
+        double[] networkDownloadValues = data.stream().mapToDouble(RuntimeDetailVO::getNetworkDownload).toArray();
+        double[] diskReadValues = data.stream().mapToDouble(RuntimeDetailVO::getDiskRead).toArray();
+        double[] diskWriteValues = data.stream().mapToDouble(RuntimeDetailVO::getDiskWrite).toArray();
 
-        double cpuVariance = calculateVariance(cpuValues);
-        double memoryVariance = calculateVariance(memoryValues);
+        // 计算所有特征的标准差
+        double cpuStdDev = Math.sqrt(calculateVariance(cpuValues));
+        double memoryStdDev = Math.sqrt(calculateVariance(memoryValues));
+        double diskStdDev = Math.sqrt(calculateVariance(diskValues));
+        double networkUploadStdDev = Math.sqrt(calculateVariance(networkUploadValues));
+        double networkDownloadStdDev = Math.sqrt(calculateVariance(networkDownloadValues));
+        double diskReadStdDev = Math.sqrt(calculateVariance(diskReadValues));
+        double diskWriteStdDev = Math.sqrt(calculateVariance(diskWriteValues));
 
-        // 如果所有指标变化都很小，说明数据质量不佳
-        return cpuVariance < 0.01 && memoryVariance < 0.01;
+        // 统计有多少个指标有足够的变化（标准差 >= 0.05）
+        int validFeatureCount = 0;
+        if (cpuStdDev >= 0.01) validFeatureCount++;
+        if (memoryStdDev >= 0.01) validFeatureCount++;
+        if (diskStdDev >= 0.01) validFeatureCount++;
+        if (networkUploadStdDev >= 0.01) validFeatureCount++;
+        if (networkDownloadStdDev >= 0.01) validFeatureCount++;
+        if (diskReadStdDev >= 0.01) validFeatureCount++;
+        if (diskWriteStdDev >= 0.01) validFeatureCount++;
+        
+        // 如果少于 4 个指标有足够变化，认为数据质量不佳
+        if (validFeatureCount < 3) {
+            log.warn("数据质量不佳：只有 {} 个指标有足够变化，需要至少 3 个。各指标标准差 - CPU: {}, 内存：{}, 磁盘：{}, 网络上传：{}, 网络下载：{}, 磁盘读取：{}, 磁盘写入：{}",
+                    validFeatureCount,
+                    String.format("%.4f", cpuStdDev), String.format("%.4f", memoryStdDev),
+                    String.format("%.4f", diskStdDev), String.format("%.4f", networkUploadStdDev),
+                    String.format("%.4f", networkDownloadStdDev), String.format("%.4f", diskReadStdDev),
+                    String.format("%.4f", diskWriteStdDev));
+            return true;
+        }
+        
+        // 检查是否存在大量零值或负值
+        long zeroCpuCount = data.stream().filter(d -> d.getCpuUsage() <= 0).count();
+        long zeroMemoryCount = data.stream().filter(d -> d.getMemoryUsage() <= 0).count();
+        
+        // 如果超过 80% 的数据 CPU 或内存为 0 或负值，认为数据质量差
+        if ((zeroCpuCount > data.size() * 0.8) || (zeroMemoryCount > data.size() * 0.8)) {
+            log.warn("数据质量不佳：存在大量零值或负值，CPU 零值占比：{}%, 内存零值占比：{}%", 
+                    String.format("%.2f", (double) zeroCpuCount / data.size() * 100),
+                    String.format("%.2f", (double) zeroMemoryCount / data.size() * 100));
+            return true;
+        }
+        
+        log.info("数据质量检查通过：{} 个指标有足够变化 (需要至少 3 个)。各指标标准差 - CPU: {}, 内存：{}, 磁盘：{}, 网络上传：{}, 网络下载：{}, 磁盘读取：{}, 磁盘写入：{}",
+                validFeatureCount,
+                String.format("%.6f", cpuStdDev), String.format("%.6f", memoryStdDev),
+                String.format("%.6f", diskStdDev), String.format("%.6f", networkUploadStdDev),
+                String.format("%.6f", networkDownloadStdDev), String.format("%.6f", diskReadStdDev),
+                String.format("%.6f", diskWriteStdDev));
+        return false;
     }
 
     /**

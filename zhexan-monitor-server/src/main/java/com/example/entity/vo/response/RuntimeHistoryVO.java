@@ -13,5 +13,5 @@ public class RuntimeHistoryVO {
     double memory;
     List<JSONObject> list = new LinkedList<>();
     // 为了兼容异常检测，添加运行时数据列表
-    private List<RuntimeData> runtimeDataList;
+    private List<ModelTrainingDataVO> runtimeDataList;
 }

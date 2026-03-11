@@ -37,7 +37,6 @@ public class JWTAuthorizeFilter extends OncePerRequestFilter {
             throws ServletException, IOException {
         String authorization = request.getHeader("Authorization");
         String uri = request.getRequestURI();
-        log.info("uri:{}", uri);
         if (uri.startsWith("/monitor")) {
             if(!uri.endsWith("/register")) {
                 Client client = service.getClientByToken(authorization);
@@ -59,7 +58,6 @@ public class JWTAuthorizeFilter extends OncePerRequestFilter {
                 SecurityContextHolder.getContext().setAuthentication(authenticationToken);
                 request.setAttribute(Const.ATTR_USER_ID, utils.toId(jwt));
                 request.setAttribute(Const.ATTR_USER_ROLE, new ArrayList<>(user.getAuthorities()).get(0).getAuthority());
-                log.info("user:{}", user);
             }
         }
         filterChain.doFilter(request, response);
