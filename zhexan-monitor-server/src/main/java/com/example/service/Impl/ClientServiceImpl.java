@@ -186,7 +186,9 @@ public class ClientServiceImpl extends ServiceImpl<ClientMapper, Client> impleme
     public RuntimeHistoryVO clientRuntimeDetailsHistory(int clientId) {
         RuntimeHistoryVO vo = influx.readRuntimeData(clientId);
         ClientDetail detail = detailMapper.selectById(clientId);
-        BeanUtils.copyProperties(detail, vo);
+        if (detail != null) {
+            BeanUtils.copyProperties(detail, vo);
+        }
         return vo;
     }
 
@@ -204,9 +206,33 @@ public class ClientServiceImpl extends ServiceImpl<ClientMapper, Client> impleme
     @Override
     public RuntimeDetailVO clientRuntimeDetailsAnomalyDetect(int clientId) {
         RuntimeDetailVO vo = currentRuntime.get(clientId);
-        ClientDetail clientDetail =  detailMapper.selectById(clientId);
-        vo.setDiskUsage(vo.getDiskUsage()/ clientDetail.getDisk());
-        vo.setMemoryUsage(vo.getMemoryUsage() / clientDetail.getMemory());
+        
+        // 检查客户端是否在线（是否有运行时数据）
+        if (vo == null) {
+            log.warn("客户端 {} 不在线，无法进行异常检测", clientId);
+            return null;
+        }
+        
+        ClientDetail clientDetail = detailMapper.selectById(clientId);
+        if (clientDetail == null) {
+            log.error("客户端 {} 的详细信息不存在", clientId);
+            return null;
+        }
+        
+        // 避免除以零
+        double diskSize = clientDetail.getDisk();
+        double memorySize = clientDetail.getMemory();
+        
+        if (diskSize <= 0 || memorySize <= 0) {
+            log.error("客户端 {} 的磁盘或内存大小无效 (disk={}, memory={})", 
+                     clientId, diskSize, memorySize);
+            return null;
+        }
+        
+        // 计算使用率
+        vo.setDiskUsage(vo.getDiskUsage() / diskSize);
+        vo.setMemoryUsage(vo.getMemoryUsage() / memorySize);
+        
         return vo;
     }
 

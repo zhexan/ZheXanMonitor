@@ -6,11 +6,15 @@ import com.example.entity.dto.AnomalyAlarm;
 import com.example.entity.vo.request.RuntimeDetailVO;
 import com.example.entity.vo.response.AnomalyResultVO;
 import com.example.entity.vo.response.ClientPreviewVO;
+import com.example.entity.vo.response.FaultClassificationResultVO;
+import com.example.entity.vo.response.RootCauseAnalysisVO;
 import com.example.entity.vo.response.RuntimeHistoryVO;
 import com.example.service.AccountService;
 import com.example.service.AnomalyAlarmService;
 import com.example.service.AnomalyDetectionService;
 import com.example.service.ClientService;
+import com.example.service.FaultClassificationService;
+import com.example.service.RootCauseAnalysisService;
 import com.example.websocket.AlarmWebSocket;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
@@ -49,6 +53,12 @@ public class AnomalyDetectionScheduler {
     
     @Resource
     private AccountService accountService;
+    
+    @Resource
+    private RootCauseAnalysisService rootCauseAnalysisService;
+    
+    @Resource
+    private FaultClassificationService faultClassificationService;
     
     /**
      * 服务启动后延迟 10 秒执行初始化训练任务
@@ -169,15 +179,45 @@ public class AnomalyDetectionScheduler {
                     if (result.isAnomaly()) {
                         anomalyCount++;
                         
-                        log.warn("检测到异常！clientId={}, score={}, description={}", 
-                                clientId, result.getAnomalyScore(), result.getDescription());
+                        log.warn("【步骤 1/3】检测到异常！clientId={}, score={}", 
+                                clientId, result.getAnomalyScore());
                         
-                        // 保存告警记录到数据库
-                        AnomalyAlarm alarm = convertToAlarm(result, clientId);
-                        anomalyAlarmService.saveAlarm(alarm);
+                        // === 步骤 2: 根因分析 ===
+                        RootCauseAnalysisVO rcaResult = null;
+                        try {
+                            log.info("【步骤 2/3】执行根因分析...");
+                            rcaResult = rootCauseAnalysisService.analyze(currentData, result);
+                            log.info("根因分析完成 - 主要因素：{}, 贡献度：{}%",
+                                    rcaResult.getTopContributor(),
+                                    String.format("%.1f", rcaResult.getContributorScores().getOrDefault(rcaResult.getTopContributor(), 0.0) * 100));
+                        } catch (Exception e) {
+                            log.error("根因分析失败", e);
+                        }
                         
-                        // 通过 WebSocket 推送告警到前端
-                        pushAlarmToFrontend(clientId, result);
+                        // === 步骤 3: 故障分类 ===
+                        FaultClassificationResultVO faultResult = null;
+                        try {
+                            // 先检查模型是否已训练
+                            if (faultClassificationService.isModelTrained(clientId)) {
+                                log.info("【步骤 3/3】执行故障分类...");
+                                faultResult = faultClassificationService.classify(clientId, currentData, result.getAnomalyScore(), rcaResult);
+                                log.info("故障分类完成 - 故障类型：{}, 置信度：{}%", 
+                                        faultResult.getFaultType(), 
+                                        Math.round(faultResult.getConfidence() * 1000) / 10.0);
+                            } else {
+                                log.info("【步骤 3/3】客户端 {} 的故障模型未训练，使用规则降级", clientId);
+                                // 即使模型未训练，classify 方法内部会降级到规则分类
+                                faultResult = faultClassificationService.classify(clientId, currentData, result.getAnomalyScore(), rcaResult);
+                                log.info("使用规则分类 - 故障类型：{}, 置信度：{}%", 
+                                        faultResult.getFaultType(), 
+                                        Math.round(faultResult.getConfidence() * 1000) / 10.0);
+                            }
+                        } catch (Exception e) {
+                            log.error("故障分类失败", e);
+                        }
+                        
+                        // === 综合处理：保存告警并推送前端 ===
+                        handleDetectionResults(clientId, result, rcaResult, faultResult);
                         
                         // 触发增量更新（将异常数据加入缓冲区）
                         updateModelWithAnomalyData(clientId, currentData);
@@ -260,6 +300,35 @@ public class AnomalyDetectionScheduler {
     }
     
     /**
+     * 综合处理检测结果
+     */
+    private void handleDetectionResults(
+            Integer clientId,
+            AnomalyResultVO anomalyResult,
+            RootCauseAnalysisVO rcaResult,
+            FaultClassificationResultVO faultResult) {
+        
+        try {
+            // 保存告警记录到数据库
+            AnomalyAlarm alarm = convertToAlarm(anomalyResult, clientId);
+            
+            // 如果有 RCA 结果，添加到描述中
+            if (rcaResult != null && rcaResult.getRootCauseDescription() != null) {
+                String combinedDesc = anomalyResult.getDescription() + " | " + rcaResult.getRootCauseDescription();
+                alarm.setDescription(combinedDesc);
+            }
+            
+            anomalyAlarmService.saveAlarm(alarm);
+            
+            // 通过 WebSocket 推送告警到前端（增强版）
+            pushEnhancedAlarmToFrontend(clientId, anomalyResult, rcaResult, faultResult);
+            
+        } catch (Exception e) {
+            log.error("处理检测结果失败", e);
+        }
+    }
+    
+    /**
      * 将异常检测结果转换为告警实体
      */
     private AnomalyAlarm convertToAlarm(AnomalyResultVO result, int clientId) {
@@ -291,7 +360,81 @@ public class AnomalyDetectionScheduler {
     }
     
     /**
-     * 通过 WebSocket 向前端推送告警消息
+     * 通过 WebSocket 向前端推送告警消息（增强版）
+     */
+    private void pushEnhancedAlarmToFrontend(
+            Integer clientId, 
+            AnomalyResultVO anomalyResult,
+            RootCauseAnalysisVO rcaResult,
+            FaultClassificationResultVO faultResult) {
+        try {
+            // 构建告警消息
+            Map<String, Object> message = new HashMap<>();
+            message.put("type", "enhanced_alarm");
+            message.put("clientId", clientId);
+            message.put("timestamp", LocalDateTime.now().format(DateTimeFormatter.ISO_LOCAL_DATE_TIME));
+            
+            // 异常检测信息
+            Map<String, Object> anomalyInfo = new HashMap<>();
+            anomalyInfo.put("isAnomaly", anomalyResult.isAnomaly());
+            anomalyInfo.put("anomalyScore", anomalyResult.getAnomalyScore());
+            anomalyInfo.put("threshold", anomalyResult.getThreshold());
+            anomalyInfo.put("description", anomalyResult.getDescription());
+            message.put("anomaly", anomalyInfo);
+            
+            // 根因分析信息
+            if (rcaResult != null) {
+                Map<String, Object> rcaInfo = new HashMap<>();
+                rcaInfo.put("topContributor", rcaResult.getTopContributor());
+                rcaInfo.put("secondContributor", rcaResult.getSecondContributor());
+                rcaInfo.put("rootCauseDescription", rcaResult.getRootCauseDescription());
+                rcaInfo.put("contributorScores", rcaResult.getContributorScores());
+                message.put("rootCause", rcaInfo);
+            }
+            
+            // 故障分类信息
+            if (faultResult != null) {
+                Map<String, Object> faultInfo = new HashMap<>();
+                faultInfo.put("faultType", faultResult.getFaultType() != null ? faultResult.getFaultType().name() : "UNKNOWN");
+                faultInfo.put("isFault", faultResult.isFault());
+                faultInfo.put("confidence", faultResult.getConfidence());
+                faultInfo.put("recommendation", faultResult.getRecommendation());
+                faultInfo.put("description", faultResult.getDescription());
+                message.put("fault", faultInfo);
+            }
+            
+            // 详细的监控数据
+            Map<String, Object> metrics = new HashMap<>();
+            metrics.put("cpuUsage", anomalyResult.getCpuUsage());
+            metrics.put("memoryUsage", anomalyResult.getMemoryUsage());
+            metrics.put("diskUsage", anomalyResult.getDiskUsage());
+            metrics.put("networkUpload", anomalyResult.getNetworkUpload());
+            metrics.put("networkDownload", anomalyResult.getNetworkDownload());
+            metrics.put("diskRead", anomalyResult.getDiskRead());
+            metrics.put("diskWrite", anomalyResult.getDiskWrite());
+            message.put("metrics", metrics);
+            
+            String jsonMessage = JSON.toJSONString(message);
+            
+            // 获取可以访问该客户端的所有用户 ID
+            List<Integer> userIds = getUserIdsByClientId(clientId);
+            
+            for (Integer userId : userIds) {
+                if (AlarmWebSocket.isUserOnline(userId)) {
+                    alarmWebSocket.sendMessageToUser(userId, jsonMessage);
+                    log.info("已向用户 {} 推送增强告警消息", userId);
+                } else {
+                    log.warn("用户 {} 不在线，无法推送实时告警", userId);
+                }
+            }
+            
+        } catch (Exception e) {
+            log.error("推送增强告警到前端失败：{}", e.getMessage(), e);
+        }
+    }
+    
+    /**
+     * 通过 WebSocket 向前端推送告警消息（旧版本，保留用于兼容）
      */
     private void pushAlarmToFrontend(Integer clientId, AnomalyResultVO result) {
         try {

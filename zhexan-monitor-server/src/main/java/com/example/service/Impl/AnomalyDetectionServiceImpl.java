@@ -8,7 +8,6 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
-import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Service;
 import smile.anomaly.IsolationForest;
 
@@ -70,6 +69,9 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
 
     @Resource
     private ModelPersistenceUtil modelPersistenceUtil;
+    
+    @Resource
+    private FaultClassificationServiceImpl faultClassificationService;
 
     @PostConstruct
     public void loadModelsFromRedis() {
@@ -82,14 +84,13 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
                 try {
                     ModelPersistenceUtil.ModelData modelData = modelPersistenceUtil.loadModel(clientId);
                     if (modelData != null) {
-                        Object obj = modelPersistenceUtil.deserializeObject(modelData.getModelData());
-                        if (obj instanceof IsolationForest) {
-                            IsolationForest model = (IsolationForest) obj;
+                        Object obj = modelPersistenceUtil.deserializeObject(modelData.modelData());
+                        if (obj instanceof IsolationForest model) {
                             modelMap.put(clientId, model);
-                            minValuesMap.put(clientId, modelData.getMinValues());
-                            maxValuesMap.put(clientId, modelData.getMaxValues());
-                            thresholdMap.put(clientId, modelData.getThreshold());
-                            log.info("客户端 {} 的模型加载成功，阈值: {}", clientId, modelData.getThreshold());
+                            minValuesMap.put(clientId, modelData.minValues());
+                            maxValuesMap.put(clientId, modelData.maxValues());
+                            thresholdMap.put(clientId, modelData.threshold());
+                            log.info("客户端 {} 的模型加载成功，阈值: {}", clientId, modelData.threshold());
                         }
                     }
                 } catch (Exception e) {
@@ -204,6 +205,13 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
             // 设置异常描述
             if (isAnomaly) {
                 result.setDescription(generateAnomalyDescription(runtimeData, anomalyScore));
+            }
+            
+            // 【新增】调用故障分类服务，采集并标注训练数据（与告警记录分离）
+            try {
+                faultClassificationService.collectAndLabelTrainingData(clientId, result, runtimeData);
+            } catch (Exception e) {
+                log.warn("采集训练数据失败，但不影响异常检测", e);
             }
 
             return result;

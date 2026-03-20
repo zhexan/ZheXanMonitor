@@ -31,11 +31,10 @@ public class ModelPersistenceUtil {
             String modelDataStr = Base64.getEncoder().encodeToString(modelData);
             template.opsForValue().set(modelKey, modelDataStr, DEFAULT_MODEL_TTL, TimeUnit.SECONDS);
 
-            StringBuilder metaBuilder = new StringBuilder();
-            metaBuilder.append("threshold=").append(threshold);
-            metaBuilder.append(";minValues=").append(arrayToString(minValues));
-            metaBuilder.append(";maxValues=").append(arrayToString(maxValues));
-            template.opsForValue().set(metaKey, metaBuilder.toString(), DEFAULT_MODEL_TTL, TimeUnit.SECONDS);
+            String metaBuilder = "threshold=" + threshold +
+                    ";minValues=" + arrayToString(minValues) +
+                    ";maxValues=" + arrayToString(maxValues);
+            template.opsForValue().set(metaKey, metaBuilder, DEFAULT_MODEL_TTL, TimeUnit.SECONDS);
 
             log.info("客户端 {} 的模型已保存到 Redis", clientId);
         } catch (Exception e) {
@@ -91,13 +90,10 @@ public class ModelPersistenceUtil {
         List<Integer> clientIds = new ArrayList<>();
         try {
             var keys = template.keys(MODEL_KEY_PREFIX + "*");
-            if (keys != null) {
-                for (var key : keys) {
-                    String keyStr = key.toString();
-                    if (keyStr.startsWith(MODEL_KEY_PREFIX)) {
-                        String idStr = keyStr.substring(MODEL_KEY_PREFIX.length());
-                        clientIds.add(Integer.parseInt(idStr));
-                    }
+            for (var key : keys) {
+                if (key.startsWith(MODEL_KEY_PREFIX)) {
+                    String idStr = key.substring(MODEL_KEY_PREFIX.length());
+                    clientIds.add(Integer.parseInt(idStr));
                 }
             }
         } catch (Exception e) {
@@ -153,23 +149,7 @@ public class ModelPersistenceUtil {
         }
         return arr;
     }
+        public record ModelData(byte[] modelData, double[] minValues, double[] maxValues, double threshold) {
 
-    public static class ModelData {
-        private final byte[] modelData;
-        private final double[] minValues;
-        private final double[] maxValues;
-        private final double threshold;
-
-        public ModelData(byte[] modelData, double[] minValues, double[] maxValues, double threshold) {
-            this.modelData = modelData;
-            this.minValues = minValues;
-            this.maxValues = maxValues;
-            this.threshold = threshold;
-        }
-
-        public byte[] getModelData() { return modelData; }
-        public double[] getMinValues() { return minValues; }
-        public double[] getMaxValues() { return maxValues; }
-        public double getThreshold() { return threshold; }
     }
 }
