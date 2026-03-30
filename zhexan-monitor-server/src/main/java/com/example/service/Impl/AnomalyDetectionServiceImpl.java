@@ -459,7 +459,6 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
      */
     private String generateAnomalyDescription(RuntimeDetailVO data, double score) {
         StringBuilder description = new StringBuilder();
-        log.info("异常数据: {}", data.toString());
         description.append(String.format("检测到异常行为 (异常分数：%.3f)", score));
 
         // 检查各项指标是否超出正常范围

@@ -132,7 +132,17 @@ public class AccountServiceImpl extends ServiceImpl<AccountMapper, Account> impl
     @Override
     public void deleteSubAccount(int uid) {
         this.removeById(uid);
+    }
 
+    @Override
+    public String updateSubAccount(UpdateSubAccountVO vo) {
+        Account account = this.getById(vo.getId());
+        if (account == null) {
+            return "子账户不存在";
+        }
+        account.setClients(JSONArray.copyOf(vo.getClients()).toJSONString());
+        this.updateById(account);
+        return null;
     }
 
     @Override

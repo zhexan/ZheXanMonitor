@@ -1,6 +1,8 @@
 package com.example.service.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
+import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.entity.dto.FaultTrainingData;
 import com.example.entity.enums.FaultType;
 import com.example.entity.vo.request.RuntimeDetailVO;
@@ -17,13 +19,8 @@ import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import smile.classification.RandomForest;
-import smile.data.DataFrame;
 import smile.data.Tuple;
 import smile.data.type.StructType;
-import smile.data.formula.Formula;
-import smile.base.cart.SplitRule;
-import smile.data.vector.IntVector;
-import smile.data.vector.DoubleVector;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -37,7 +34,7 @@ import java.util.stream.Collectors;
  */
 @Slf4j
 @Service
-public class FaultClassificationServiceImpl implements FaultClassificationService {
+public class FaultClassificationServiceImpl extends ServiceImpl<FaultTrainingDataMapper, FaultTrainingData> implements FaultClassificationService {
     
     @Resource
     private FaultTrainingDataMapper faultTrainingDataMapper;
@@ -54,14 +51,8 @@ public class FaultClassificationServiceImpl implements FaultClassificationServic
     // 存储每个客户端的随机森林模型（定制模型）
     private final Map<Integer, RandomForest> modelMap = new ConcurrentHashMap<>();
     
-    // 存储每个客户端的训练数据
-    private final Map<Integer, List<FaultTrainingData>> trainingDataMap = new ConcurrentHashMap<>();
-    
     // 存储每个客户端的新增训练数据缓冲区
     private final Map<Integer, List<FaultTrainingData>> newDataBufferMap = new ConcurrentHashMap<>();
-    
-    // 存储模型评估指标（用于监控模型质量）
-    private final Map<Integer, ModelMetrics> testMetricsMap = new ConcurrentHashMap<>();
     
     // 最大缓冲数据量（达到此数量自动触发模型更新）
     private static final int MAX_BUFFER_SIZE = 30;
@@ -71,13 +62,7 @@ public class FaultClassificationServiceImpl implements FaultClassificationServic
     
     // 理想训练数据量
     private static final int IDEAL_TRAINING_SIZE = 1000;
-    
-    // 特征数量
-    private static final int FEATURE_COUNT = 7;
-    
-    // 训练集/测试集分割比例（80% 训练，20% 测试）
-    private static final double TRAIN_RATIO = 0.8;
-    
+
     // 定制模型门槛（数据量超过此值才训练定制模型）
     private static final int CUSTOM_MODEL_THRESHOLD = 1000;
     
@@ -106,13 +91,11 @@ public class FaultClassificationServiceImpl implements FaultClassificationServic
                         // 使用 AIModelTrainingService 训练定制模型
                         RandomForest randomForest = aiModelTrainingService.trainModel(clientData);
                         modelMap.put(clientId, randomForest);
-                        trainingDataMap.put(clientId, clientData);
                         log.info("客户端 {} 的定制模型加载并训练完成，数据量：{}", clientId, clientData.size());
                     } catch (Exception e) {
                         log.error("加载客户端 {} 的定制模型失败", clientId, e);
                     }
                 } else if (clientData.size() >= MIN_TRAINING_SIZE) {
-                    trainingDataMap.put(clientId, clientData);
                     log.info("客户端 {} 的训练数据不足 ({} < {})，暂不训练定制模型", 
                              clientId, clientData.size(), CUSTOM_MODEL_THRESHOLD);
                 }
@@ -153,7 +136,6 @@ public class FaultClassificationServiceImpl implements FaultClassificationServic
             
             // 保存模型到内存
             modelMap.put(clientId, randomForest);
-            trainingDataMap.put(clientId, trainingData);
             
             log.info("客户端 {} 的模型训练完成并保存到内存", clientId);
             
@@ -208,7 +190,7 @@ public class FaultClassificationServiceImpl implements FaultClassificationServic
             // 预测
             int predictedLabel = model.predict(tuple);
             
-            // 计算各类别的概率（使用 SMILE 官方 API）
+            // 计算各类别的概率
             Map<String, Double> probabilities = calculateProbabilitiesWithSMILE(model, tuple);
             
             // 构建结果
@@ -253,7 +235,6 @@ public class FaultClassificationServiceImpl implements FaultClassificationServic
     @Override
     public void clearModel(int clientId) {
         modelMap.remove(clientId);
-        trainingDataMap.remove(clientId);
         newDataBufferMap.remove(clientId);
         log.info("已清除客户端 {} 的故障分类模型", clientId);
     }
@@ -281,11 +262,8 @@ public class FaultClassificationServiceImpl implements FaultClassificationServic
                 return;
             }
             
-            // 判断是否为明确的故障类型
-            boolean isClearFault = isClearFaultType(faultTypeCode);
-            
-            // 明确故障类型：状态=已确认(1)；不明确：状态=待审核(0)
-            int status = isClearFault ? 1 : 0;
+            // 所有自动标注的数据都需要审核，状态=待审核(0)
+            int status = 0;
             
             // 创建训练数据
             FaultTrainingData trainingData = createTrainingData(clientId, faultTypeCode, runtimeData, status);
@@ -293,10 +271,7 @@ public class FaultClassificationServiceImpl implements FaultClassificationServic
             // 保存到数据库
             saveToDatabase(trainingData);
             
-            // 只有已确认的数据才添加到内存缓冲区（用于模型训练）
-            if (isClearFault) {
-                addToBuffer(clientId, trainingData);
-            }
+            // 待审核的数据不添加到内存缓冲区，等待管理员审核通过后再添加
             
             log.debug("已采集训练数据 - 客户端：{}, 故障类型：{}, 状态：{}, 异常分数：{}",
                     clientId, getFaultTypeName(faultTypeCode), 
@@ -366,15 +341,6 @@ public class FaultClassificationServiceImpl implements FaultClassificationServic
     }
     
     /**
-     * 判断是否为明确的故障类型（不需要人工确认）
-     */
-    private boolean isClearFaultType(Integer faultTypeCode) {
-        return faultTypeCode != null && 
-               faultTypeCode != FaultType.NORMAL.getCode() && 
-               faultTypeCode != FaultType.ANOMALY_DETECTED.getCode();
-    }
-
-    /**
      * 创建训练数据对象
      */
     private FaultTrainingData createTrainingData(Integer clientId, Integer faultTypeCode, RuntimeDetailVO data, int status) {
@@ -415,10 +381,30 @@ public class FaultClassificationServiceImpl implements FaultClassificationServic
         
         // 检查是否需要处理（比如触发模型更新通知）
         if (buffer.size() >= MAX_BUFFER_SIZE) {
-            log.info("客户端 {} 的训练数据缓冲区达到阈值 ({})，可以考虑触发模型更新", 
+            log.info("客户端 {} 的训练数据缓冲区达到阈值 ({})，触发模型更新检查", 
                     clientId, buffer.size());
-            // 这里可以添加回调或事件通知
-            // 暂时不清空缓冲区，让数据累积
+            triggerModelTraining(clientId);
+            buffer.clear();
+        }
+    }
+    
+    /**
+     * 触发模型训练
+     */
+    private void triggerModelTraining(int clientId) {
+        try {
+            List<FaultTrainingData> allData = loadTrainingDataByClientId(clientId);
+            log.info("客户端 {} 当前共有 {} 条已确认训练数据", clientId, allData.size());
+            
+            if (allData.size() >= MIN_TRAINING_SIZE) {
+                log.info("开始为客户端 {} 自动训练模型", clientId);
+                trainClientModel(clientId);
+                log.info("客户端 {} 模型自动训练完成", clientId);
+            } else {
+                log.info("训练数据不足 ({}/{})，跳过模型训练", allData.size(), MIN_TRAINING_SIZE);
+            }
+        } catch (Exception e) {
+            log.error("自动触发模型训练失败，客户端 ID: {}", clientId, e);
         }
     }
     
@@ -440,6 +426,7 @@ public class FaultClassificationServiceImpl implements FaultClassificationServic
     public List<FaultTrainingData> loadTrainingDataByClientId(Integer clientId) {
         LambdaQueryWrapper<FaultTrainingData> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(FaultTrainingData::getClientId, clientId)
+               .eq(FaultTrainingData::getStatus, 1)
                .orderByDesc(FaultTrainingData::getDataTime);
         return faultTrainingDataMapper.selectList(wrapper);
     }
@@ -459,6 +446,30 @@ public class FaultClassificationServiceImpl implements FaultClassificationServic
             wrapper.last("LIMIT " + limit);
         }
         return faultTrainingDataMapper.selectList(wrapper);
+    }
+
+    /**
+     * 分页查询待审核的训练数据
+     */
+    @Override
+    public Map<String, Object> getPendingTrainingDataPaged(Integer clientId, int offset, int limit) {
+        int pageNum = offset / limit + 1;
+        Page<FaultTrainingData> page = new Page<>(pageNum, limit);
+        
+        LambdaQueryWrapper<FaultTrainingData> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(FaultTrainingData::getStatus, 0)
+               .orderByAsc(FaultTrainingData::getDataTime);
+        if (clientId != null) {
+            wrapper.eq(FaultTrainingData::getClientId, clientId);
+        }
+        
+        Page<FaultTrainingData> result = faultTrainingDataMapper.selectPage(page, wrapper);
+        
+        Map<String, Object> map = new HashMap<>();
+        map.put("data", result.getRecords());
+        map.put("total", result.getTotal());
+        map.put("hasMore", result.getRecords().size() == limit);
+        return map;
     }
     
     /**
@@ -490,7 +501,7 @@ public class FaultClassificationServiceImpl implements FaultClassificationServic
      * 手动添加训练数据（用于人工标注）
      */
     public void addManualTrainingData(Integer clientId, Integer faultTypeCode, RuntimeDetailVO runtimeData) {
-        FaultTrainingData trainingData = createTrainingData(clientId, faultTypeCode, runtimeData, 1);
+        FaultTrainingData trainingData = createTrainingData(clientId, faultTypeCode, runtimeData, 0);
         saveToDatabase(trainingData);
         addToBuffer(clientId, trainingData);
         log.info("手动添加训练数据 - 客户端：{}, 故障类型：{}", 
@@ -513,7 +524,7 @@ public class FaultClassificationServiceImpl implements FaultClassificationServic
             model.predict(tuple, probArray);
             
             // 将概率数组转换为 Map
-            for (int i = 0; i < types.length && i < probArray.length; i++) {
+            for (int i = 0; i < types.length; i++) {
                 probabilities.put(types[i].name(), probArray[i]);
             }
         } catch (Exception e) {

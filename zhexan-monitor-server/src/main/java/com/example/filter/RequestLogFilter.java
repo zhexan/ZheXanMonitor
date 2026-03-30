@@ -31,8 +31,7 @@ public class RequestLogFilter extends OncePerRequestFilter {
     @Resource
     SnowflakeIdGenerator generator;
 
-    private final Set<String> ignores = Set.of("/swagger-ui", "/v3/api-docs", "/monitor/runtime", "/monitor/list");
-
+    private final Set<String> ignores = Set.of("/swagger-ui", "/v3/api-docs", "/monitor/runtime", "/monitor/list", "/alarm/unhandled", "/fault/pending", "/alarm/history");
     @Override
     protected void doFilterInternal(HttpServletRequest request, @NotNull HttpServletResponse response, @NotNull FilterChain filterChain) throws ServletException, IOException {
         if(this.isIgnoreUrl(request.getServletPath())) {

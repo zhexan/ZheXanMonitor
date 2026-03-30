@@ -1,6 +1,7 @@
 package com.example.service.Impl;
 
 import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.baomidou.mybatisplus.extension.plugins.pagination.Page;
 import com.baomidou.mybatisplus.extension.service.impl.ServiceImpl;
 import com.example.entity.dto.AnomalyAlarm;
 import com.example.mapper.AnomalyAlarmMapper;
@@ -9,7 +10,9 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.time.LocalDateTime;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 
 /**
  * 异常告警服务实现类
@@ -49,8 +52,10 @@ public class AnomalyAlarmServiceImpl extends ServiceImpl<AnomalyAlarmMapper, Ano
     public List<AnomalyAlarm> getAlarmHistory(Integer clientId, Integer limit) {
         LambdaQueryWrapper<AnomalyAlarm> wrapper = new LambdaQueryWrapper<>();
         wrapper.eq(AnomalyAlarm::getClientId, clientId)
-               .orderByDesc(AnomalyAlarm::getAlarmTime)
-               .last("LIMIT " + (limit != null ? limit : 100));
+               .orderByDesc(AnomalyAlarm::getAlarmTime);
+        if (limit != null && limit > 0) {
+            wrapper.last("LIMIT " + limit);
+        }
         return this.list(wrapper);
     }
     
@@ -64,5 +69,142 @@ public class AnomalyAlarmServiceImpl extends ServiceImpl<AnomalyAlarmMapper, Ano
         } else {
             log.warn("未找到告警记录：id={}", alarmId);
         }
+    }
+    
+    @Override
+    public void ignoreAlarm(Integer alarmId) {
+        AnomalyAlarm alarm = this.getById(alarmId);
+        if (alarm != null) {
+            alarm.setIsIgnored(true);
+            alarm.setIsHandled(true);
+            this.updateById(alarm);
+            log.info("标记告警为已忽略：id={}", alarmId);
+        } else {
+            log.warn("未找到告警记录：id={}", alarmId);
+        }
+    }
+    
+    @Override
+    public void batchIgnoreAlarms(List<Integer> alarmIds) {
+        for (Integer alarmId : alarmIds) {
+            ignoreAlarm(alarmId);
+        }
+        log.info("批量忽略告警：共 {} 条", alarmIds.size());
+    }
+
+    @Override
+    public List<AnomalyAlarm> getUnhandledAlarmsByClientIds(List<Integer> clientIds) {
+        if (clientIds == null || clientIds.isEmpty()) {
+            return List.of();
+        }
+        LambdaQueryWrapper<AnomalyAlarm> wrapper = new LambdaQueryWrapper<>();
+        wrapper.in(AnomalyAlarm::getClientId, clientIds)
+               .eq(AnomalyAlarm::getIsHandled, false)
+               .orderByDesc(AnomalyAlarm::getAlarmTime);
+        return this.list(wrapper);
+    }
+
+    @Override
+    public List<AnomalyAlarm> getAlarmHistoryByClientIds(List<Integer> clientIds, Integer limit) {
+        if (clientIds == null || clientIds.isEmpty()) {
+            return List.of();
+        }
+        LambdaQueryWrapper<AnomalyAlarm> wrapper = new LambdaQueryWrapper<>();
+        wrapper.in(AnomalyAlarm::getClientId, clientIds)
+               .orderByDesc(AnomalyAlarm::getAlarmTime);
+        if (limit != null && limit > 0) {
+            wrapper.last("LIMIT " + limit);
+        }
+        return this.list(wrapper);
+    }
+
+    @Override
+    public Map<String, Object> getAlarmHistoryPaged(Integer clientId, int offset, int limit) {
+        int pageNum = offset / limit + 1;
+        Page<AnomalyAlarm> page = new Page<>(pageNum, limit);
+        
+        LambdaQueryWrapper<AnomalyAlarm> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(clientId != null, AnomalyAlarm::getClientId, clientId)
+               .orderByDesc(AnomalyAlarm::getAlarmTime);
+        
+        Page<AnomalyAlarm> result = this.page(page, wrapper);
+        
+        Map<String, Object> map = new HashMap<>();
+        map.put("alarms", result.getRecords());
+        map.put("total", result.getTotal());
+        map.put("hasMore", result.getRecords().size() == limit);
+        return map;
+    }
+
+    @Override
+    public Map<String, Object> getAlarmHistoryPagedByClientIds(List<Integer> clientIds, int offset, int limit) {
+        if (clientIds == null || clientIds.isEmpty()) {
+            Map<String, Object> empty = new HashMap<>();
+            empty.put("alarms", List.of());
+            empty.put("total", 0L);
+            empty.put("hasMore", false);
+            return empty;
+        }
+        
+        int pageNum = offset / limit + 1;
+        Page<AnomalyAlarm> page = new Page<>(pageNum, limit);
+        
+        LambdaQueryWrapper<AnomalyAlarm> wrapper = new LambdaQueryWrapper<>();
+        wrapper.in(AnomalyAlarm::getClientId, clientIds)
+               .orderByDesc(AnomalyAlarm::getAlarmTime);
+        
+        Page<AnomalyAlarm> result = this.page(page, wrapper);
+        
+        Map<String, Object> map = new HashMap<>();
+        map.put("alarms", result.getRecords());
+        map.put("total", result.getTotal());
+        map.put("hasMore", result.getRecords().size() == limit);
+        return map;
+    }
+
+    @Override
+    public Map<String, Object> getUnhandledAlarmsPaged(Integer clientId, int offset, int limit) {
+        int pageNum = offset / limit + 1;
+        Page<AnomalyAlarm> page = new Page<>(pageNum, limit);
+        
+        LambdaQueryWrapper<AnomalyAlarm> wrapper = new LambdaQueryWrapper<>();
+        wrapper.eq(clientId != null, AnomalyAlarm::getClientId, clientId)
+               .eq(AnomalyAlarm::getIsHandled, false)
+               .orderByDesc(AnomalyAlarm::getAlarmTime);
+        
+        Page<AnomalyAlarm> result = this.page(page, wrapper);
+        
+        Map<String, Object> map = new HashMap<>();
+        map.put("alarms", result.getRecords());
+        map.put("total", result.getTotal());
+        map.put("hasMore", result.getRecords().size() == limit);
+        return map;
+    }
+
+    @Override
+    public Map<String, Object> getUnhandledAlarmsPagedByClientIds(List<Integer> clientIds, int offset, int limit) {
+        if (clientIds == null || clientIds.isEmpty()) {
+            Map<String, Object> empty = new HashMap<>();
+            empty.put("alarms", List.of());
+            empty.put("total", 0L);
+            empty.put("hasMore", false);
+            return empty;
+        }
+        
+        int pageNum = offset / limit + 1;
+        Page<AnomalyAlarm> page = new Page<>(pageNum, limit);
+        
+        LambdaQueryWrapper<AnomalyAlarm> wrapper = new LambdaQueryWrapper<>();
+        wrapper.in(AnomalyAlarm::getClientId, clientIds)
+               .eq(AnomalyAlarm::getIsHandled, false)
+               .orderByDesc(AnomalyAlarm::getAlarmTime);
+        
+        Page<AnomalyAlarm> result = this.page(page, wrapper);
+        
+        Map<String, Object> map = new HashMap<>();
+        map.put("alarms", result.getRecords());
+        map.put("total", result.getTotal());
+        map.put("hasMore", result.getRecords().size() == limit);
+        return map;
     }
 }

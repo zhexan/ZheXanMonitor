@@ -28,7 +28,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 import java.io.IOException;
 @Slf4j
 @Configuration
-public class securityConfiguration {
+public class SecurityConfiguration {
     @Resource
     private JWTUtils utils;
     @Resource

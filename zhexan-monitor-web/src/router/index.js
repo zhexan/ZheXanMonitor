@@ -33,6 +33,16 @@ const router = createRouter({
                     path:'security',
                     name:'security',
                     component: () => import('@/views/main/Security.vue')
+                },
+                {
+                    path:'alarm',
+                    name:'alarm',
+                    component: () => import('@/views/main/Alarms.vue')
+                },
+                {
+                    path:'fault-records',
+                    name:'fault-records',
+                    component: () => import('@/views/main/FaultRecords.vue')
                 }
             ]
         }

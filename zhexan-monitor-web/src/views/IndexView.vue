@@ -60,7 +60,9 @@ const route = useRoute()
 const dark = ref(useDark())
 const tabs = [
   {id: 1, name: '管理', route: 'manage'},
-  {id: 2, name: '安全', route: 'security'}
+  {id: 2, name: '安全', route: 'security'},
+  {id: 3, name: '告警', route: 'alarm'},
+  {id: 4, name: '故障', route: 'fault-records'}
 ]
 const defaultIndex = () => {
   for (let tab of tabs) {

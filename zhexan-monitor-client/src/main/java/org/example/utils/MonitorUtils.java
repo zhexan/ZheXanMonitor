@@ -90,7 +90,7 @@ public class MonitorUtils {
             upload = (networkInterface.getBytesSent() - upload) / statisticTime;
             download = (networkInterface.getBytesRecv() - download) / statisticTime;
             read = (hardware.getDiskStores().stream().mapToLong(HWDiskStore::getReadBytes).sum() - read) / statisticTime;
-            write = (hardware.getDiskStores().stream().mapToLong(HWDiskStore::getReadBytes).sum() - write) / statisticTime;
+            write = (hardware.getDiskStores().stream().mapToLong(HWDiskStore::getWriteBytes).sum() - write) / statisticTime;
            double memory =  (hardware.getMemory().getTotal() - hardware.getMemory().getAvailable()) / 1024.0 / 1024 /1024;
            double disk = Arrays.stream(File.listRoots())
                    .mapToLong(file -> file.getTotalSpace() - file.getFreeSpace()).sum() / 1024.0 / 1024 / 1024;
@@ -101,7 +101,7 @@ public class MonitorUtils {
                    .setNetworkUpload(upload / 1024)
                    .setNetworkDownload(download / 1024)
                    .setDiskRead(read / 1024 / 1024)
-                   .setDisKWrite(write / 1024 / 1024)
+                   .setDiskWrite(write / 1024 / 1024)
                    .setTimestamp(new Date().getTime());
         } catch(Exception e) {
             log.error("读取运行时数据失败", e);

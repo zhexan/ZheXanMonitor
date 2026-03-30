@@ -1,6 +1,10 @@
 package com.example.controller;
 
+import com.baomidou.mybatisplus.core.conditions.query.LambdaQueryWrapper;
+import com.example.entity.RestBean;
 import com.example.entity.dto.AnomalyAlarm;
+import com.example.entity.dto.Account;
+import com.example.service.AccountService;
 import com.example.service.AnomalyAlarmService;
 import com.example.utils.Const;
 import com.example.websocket.AlarmWebSocket;
@@ -26,118 +30,201 @@ public class AlarmController {
     private AlarmWebSocket alarmWebSocket;
     @Resource
     private AnomalyAlarmService anomalyAlarmService;
-    
+    @Resource
+    private AccountService accountService;
+
     /**
-     * 获取指定客户端的未处理告警列表
+     * 获取未处理告警列表（分页）
+     * 管理员可获取所有客户端的告警，子账户只能获取所管理客户端的告警
      */
     @GetMapping("/unhandled")
-    public Map<String, Object> getUnhandledAlarms(
-            @RequestParam Integer clientId,
+    public RestBean<Map<String, Object>> getUnhandledAlarms(
+            @RequestParam(required = false) Integer clientId,
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "20") int limit,
             @RequestAttribute(Const.ATTR_USER_ID) int userId,
             @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
-        
-        Map<String, Object> result = new HashMap<>();
-        List<AnomalyAlarm> alarms = anomalyAlarmService.getUnhandledAlarms(clientId);
-        result.put("alarms", alarms);
-        result.put("count", alarms.size());
-        
-        return result;
+
+        boolean isAdmin = isAdminAccount(userRole);
+        List<Integer> accessibleClients = isAdmin ? null : getAccessibleClients(userId, userRole);
+
+        Map<String, Object> result;
+        if (clientId != null) {
+            if (!isAdmin && accessibleClients != null && !accessibleClients.contains(clientId)) {
+                return RestBean.noPermission();
+            }
+            result = anomalyAlarmService.getUnhandledAlarmsPaged(clientId, offset, limit);
+        } else if (isAdmin) {
+            result = anomalyAlarmService.getUnhandledAlarmsPaged(null, offset, limit);
+        } else {
+            result = anomalyAlarmService.getUnhandledAlarmsPagedByClientIds(accessibleClients, offset, limit);
+        }
+
+        return RestBean.success(result);
     }
-    
+
     /**
-     * 获取指定客户端的告警历史
+     * 获取告警历史（分页）
+     * 管理员可获取所有客户端的告警历史，子账户只能获取所管理客户端的告警历史
      */
     @GetMapping("/history")
-    public Map<String, Object> getAlarmHistory(
-            @RequestParam Integer clientId,
-            @RequestParam(defaultValue = "100") Integer limit,
+    public RestBean<Map<String, Object>> getAlarmHistory(
+            @RequestParam(required = false) Integer clientId,
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "20") int limit,
             @RequestAttribute(Const.ATTR_USER_ID) int userId,
             @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
-        
-        Map<String, Object> result = new HashMap<>();
-        List<AnomalyAlarm> alarms = anomalyAlarmService.getAlarmHistory(clientId, limit);
-        result.put("alarms", alarms);
-        result.put("total", alarms.size());
-        
-        return result;
+
+        boolean isAdmin = isAdminAccount(userRole);
+        List<Integer> accessibleClients = isAdmin ? null : getAccessibleClients(userId, userRole);
+
+        Map<String, Object> result;
+        if (clientId != null) {
+            if (!isAdmin && accessibleClients != null && !accessibleClients.contains(clientId)) {
+                return RestBean.noPermission();
+            }
+            result = anomalyAlarmService.getAlarmHistoryPaged(clientId, offset, limit);
+        } else if (isAdmin) {
+            result = anomalyAlarmService.getAlarmHistoryPaged(null, offset, limit);
+        } else {
+            result = anomalyAlarmService.getAlarmHistoryPagedByClientIds(accessibleClients, offset, limit);
+        }
+
+        return RestBean.success(result);
+    }
+
+    /**
+     * 标记告警为已处理
+     * 只有管理该告警所属客户端的用户才能处理
+     */
+    @PostMapping("/handle")
+    public RestBean<Void> handleAlarm(
+            @RequestBody Map<String, Integer> params,
+            @RequestAttribute(Const.ATTR_USER_ID) int userId,
+            @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
+
+        Integer alarmId = params.get("alarmId");
+        if (alarmId == null) {
+            return RestBean.failure(400, "缺少 alarmId 参数");
+        }
+
+        AnomalyAlarm alarm = anomalyAlarmService.getById(alarmId);
+        if (alarm == null) {
+            return RestBean.failure(404, "告警不存在");
+        }
+
+        if (!isAdminAccount(userRole)) {
+            List<Integer> accessibleClients = getAccessibleClients(userId, userRole);
+            if (!accessibleClients.contains(alarm.getClientId())) {
+                return RestBean.noPermission();
+            }
+        }
+
+        anomalyAlarmService.handleAlarm(alarmId);
+        return RestBean.success();
+    }
+
+    /**
+     * 批量标记告警为已处理
+     * 只有管理这些告警所属客户端的用户才能处理
+     */
+    @PostMapping("/batch-handle")
+    public RestBean<Void> batchHandleAlarms(
+            @RequestBody Map<String, Object> params,
+            @RequestAttribute(Const.ATTR_USER_ID) int userId,
+            @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
+
+        List<Integer> alarmIds = (List<Integer>) params.get("alarmIds");
+        if (alarmIds == null || alarmIds.isEmpty()) {
+            return RestBean.failure(400, "缺少 alarmIds 参数");
+        }
+
+        if (!isAdminAccount(userRole)) {
+            List<AnomalyAlarm> alarms = anomalyAlarmService.listByIds(alarmIds);
+            List<Integer> accessibleClients = getAccessibleClients(userId, userRole);
+
+            for (AnomalyAlarm alarm : alarms) {
+                if (!accessibleClients.contains(alarm.getClientId())) {
+                    return RestBean.noPermission();
+                }
+            }
+        }
+
+        for (Integer alarmId : alarmIds) {
+            anomalyAlarmService.handleAlarm(alarmId);
+        }
+        return RestBean.success();
     }
     
     /**
-     * 标记告警为已处理
+     * 忽略告警（不添加到训练数据）
      */
-    @PostMapping("/handle")
-    public Map<String, Object> handleAlarm(
+    @PostMapping("/ignore")
+    public RestBean<Void> ignoreAlarm(
             @RequestBody Map<String, Integer> params,
             @RequestAttribute(Const.ATTR_USER_ID) int userId,
             @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
         
         Integer alarmId = params.get("alarmId");
         if (alarmId == null) {
-            throw new IllegalArgumentException("缺少 alarmId 参数");
+            return RestBean.failure(400, "缺少 alarmId 参数");
         }
         
-        anomalyAlarmService.handleAlarm(alarmId);
+        AnomalyAlarm alarm = anomalyAlarmService.getById(alarmId);
+        if (alarm == null) {
+            return RestBean.failure(404, "告警不存在");
+        }
         
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("message", "告警已标记为已处理");
+        if (!isAdminAccount(userRole)) {
+            List<Integer> accessibleClients = getAccessibleClients(userId, userRole);
+            if (!accessibleClients.contains(alarm.getClientId())) {
+                return RestBean.noPermission();
+            }
+        }
         
-        return result;
+        anomalyAlarmService.ignoreAlarm(alarmId);
+        return RestBean.success();
     }
     
     /**
-     * 批量标记告警为已处理
+     * 批量忽略告警（不添加到训练数据）
      */
-    @PostMapping("/batch-handle")
-    public Map<String, Object> batchHandleAlarms(
+    @PostMapping("/batch-ignore")
+    public RestBean<Void> batchIgnoreAlarms(
             @RequestBody Map<String, Object> params,
             @RequestAttribute(Const.ATTR_USER_ID) int userId,
             @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
         
         List<Integer> alarmIds = (List<Integer>) params.get("alarmIds");
         if (alarmIds == null || alarmIds.isEmpty()) {
-            throw new IllegalArgumentException("缺少 alarmIds 参数");
+            return RestBean.failure(400, "缺少 alarmIds 参数");
         }
         
-        for (Integer alarmId : alarmIds) {
-            anomalyAlarmService.handleAlarm(alarmId);
+        if (!isAdminAccount(userRole)) {
+            List<AnomalyAlarm> alarms = anomalyAlarmService.listByIds(alarmIds);
+            List<Integer> accessibleClients = getAccessibleClients(userId, userRole);
+            
+            for (AnomalyAlarm alarm : alarms) {
+                if (!accessibleClients.contains(alarm.getClientId())) {
+                    return RestBean.noPermission();
+                }
+            }
         }
         
-        Map<String, Object> result = new HashMap<>();
-        result.put("success", true);
-        result.put("message", "已成功标记 " + alarmIds.size() + " 条告警");
-        
-        return result;
+        anomalyAlarmService.batchIgnoreAlarms(alarmIds);
+        return RestBean.success();
     }
-    
-    /**
-     * 测试手动推送告警消息（仅用于测试）
-     */
-    @PostMapping("/test-push")
-    public Map<String, Object> testPushAlarm(
-            @RequestBody Map<String, Object> params,
-            @RequestAttribute(Const.ATTR_USER_ID) int userId) {
-        
-        try {
-            Map<String, Object> message = new HashMap<>();
-            message.put("type", "test_alarm");
-            message.put("message", "这是一条测试告警消息");
-            message.put("timestamp", System.currentTimeMillis());
-            
-            String jsonMessage = com.alibaba.fastjson2.JSON.toJSONString(message);
-            alarmWebSocket.sendMessageToUser(userId, jsonMessage);
-            
-            Map<String, Object> result = new HashMap<>();
-            result.put("success", true);
-            result.put("message", "测试消息已发送");
-            
-            return result;
-            
-        } catch (Exception e) {
-            Map<String, Object> result = new HashMap<>();
-            result.put("success", false);
-            result.put("error", e.getMessage());
-            return result;
+
+    private List<Integer> getAccessibleClients(int userId, String userRole) {
+        if (isAdminAccount(userRole)) {
+            return List.of();
         }
+        Account account = accountService.getById(userId);
+        return account.getClientList();
+    }
+
+    private boolean isAdminAccount(String role) {
+        role = role.substring(5);
+        return Const.ROLE_ADMIN.equals(role);
     }
 }

@@ -22,6 +22,7 @@ public interface AccountService extends IService<Account>, UserDetailsService {
     boolean changePassword(int id, String oldPass, String newPass);
     Map<Boolean, String> createSubAccount(CreateSubAccountVO vo);
     void deleteSubAccount(int uid);
+    String updateSubAccount(UpdateSubAccountVO vo);
     List<SubAccountVO> listSubAccount();
     String modifyEmail(int id, ModifyEmailVO vo);
 }

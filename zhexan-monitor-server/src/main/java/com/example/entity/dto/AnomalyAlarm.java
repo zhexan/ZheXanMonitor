@@ -80,6 +80,11 @@ public class AnomalyAlarm {
     private Boolean isHandled;
     
     /**
+     * 是否已忽略
+     */
+    private Boolean isIgnored;
+    
+    /**
      * 告警时间
      */
     private LocalDateTime alarmTime;

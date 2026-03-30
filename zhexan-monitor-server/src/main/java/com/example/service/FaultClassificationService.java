@@ -1,5 +1,6 @@
 package com.example.service;
 
+import com.baomidou.mybatisplus.extension.service.IService;
 import com.example.entity.dto.FaultTrainingData;
 import com.example.entity.vo.request.RuntimeDetailVO;
 import com.example.entity.vo.response.AnomalyResultVO;
@@ -7,13 +8,14 @@ import com.example.entity.vo.response.FaultClassificationResultVO;
 import com.example.entity.vo.response.RootCauseAnalysisVO;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * 故障分类服务接口
  * @author zhexan
  * @since 2026-03-14
  */
-public interface FaultClassificationService {
+public interface FaultClassificationService extends IService<FaultTrainingData> {
     
     /**
      * 手动触发模型训练（从数据库加载数据并训练）
@@ -82,6 +84,15 @@ public interface FaultClassificationService {
      * @return 待审核的训练数据列表
      */
     List<FaultTrainingData> getPendingTrainingData(Integer clientId, int limit);
+
+    /**
+     * 分页查询待审核的训练数据
+     * @param clientId 客户端 ID（可选，为空则查询所有）
+     * @param offset 起始偏移量
+     * @param limit 每页数量
+     * @return 分页结果，包含 data、total、hasMore
+     */
+    Map<String, Object> getPendingTrainingDataPaged(Integer clientId, int offset, int limit);
     
     /**
      * 确认或修改训练数据标签
@@ -92,4 +103,9 @@ public interface FaultClassificationService {
      */
     FaultTrainingData reviewTrainingData(int id, int faultTypeCode, boolean approved);
 
+    Integer autoLabelFaultType(AnomalyResultVO result);
+
+    void addManualTrainingData(Integer clientId, Integer faultTypeCode, RuntimeDetailVO runtimeData);
+
+    List<FaultTrainingData> loadTrainingDataByClientId(Integer clientId);
 }

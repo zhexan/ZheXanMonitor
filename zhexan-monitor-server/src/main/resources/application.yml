@@ -22,8 +22,8 @@ spring:
       verify:
         mail-limit: 60
       flow:
-        period: 5
-        limit: 100
+        period: 10
+        limit: 800
         block: 30
       cors:
         origin: '*'

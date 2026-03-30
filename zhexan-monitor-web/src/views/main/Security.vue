@@ -1,10 +1,11 @@
 <script setup>
 import {reactive, ref} from "vue";
-import {Delete, Lock, Plus, Refresh, Switch} from "@element-plus/icons-vue";
+import {Delete, Edit, Lock, Plus, Refresh, Switch} from "@element-plus/icons-vue";
 import {get, logout, post} from "@/net";
 import {ElMessage} from "element-plus";
 import router from "@/router";
 import CreateSubAccount from "@/component/CreateSubAccount.vue";
+import EditSubAccount from "@/component/EditSubAccount.vue";
 import {useStore} from "@/store";
 
 const store = useStore()
@@ -108,12 +109,19 @@ const initSubAccounts = () =>
     get('/api/user/sub/list', list => accounts.value = list)
 
 const createAccount = ref(false)
+const editAccount = ref(false)
+const currentEditData = ref(null)
 
 function deleteAccount(id) {
   get(`/api/user/sub/delete?uid=${id}`, () => {
     ElMessage.success('子账户删除成功')
     initSubAccounts()
   })
+}
+
+function openEditDrawer(item) {
+  currentEditData.value = item
+  editAccount.value = true
 }
 </script>
 
@@ -187,8 +195,10 @@ function deleteAccount(id) {
             </div>
             <div style="font-size: 13px;color: grey">{{item.email}}</div>
           </div>
+          <el-button type="warning" :icon="Edit"
+                     @click="openEditDrawer(item)" text>修改</el-button>
           <el-button type="danger" :icon="Delete"
-                     @click="deleteAccount(item.id)" text>删除子账户</el-button>
+                     @click="deleteAccount(item.id)" text>删除</el-button>
         </div>
         <el-button :icon="Plus" type="primary"
                    @click="createAccount = true" plain>添加更多子用户</el-button>
@@ -203,6 +213,10 @@ function deleteAccount(id) {
     </div>
     <el-drawer v-model="createAccount" size="350" :with-header="false">
       <create-sub-account :clients="simpleList" @create="createAccount = false;initSubAccounts()"/>
+    </el-drawer>
+    <el-drawer v-model="editAccount" size="350" :with-header="false">
+      <edit-sub-account :clients="simpleList" :edit-data="currentEditData" 
+                        @edit="editAccount = false;initSubAccounts()"/>
     </el-drawer>
   </div>
 </template>

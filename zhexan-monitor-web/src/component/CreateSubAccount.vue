@@ -69,8 +69,7 @@ function createSubAccount() {
         emits('create')
       },(message) => {
         ElMessage.warning(message)
-          }
-      )
+      })
     }
   })
 }

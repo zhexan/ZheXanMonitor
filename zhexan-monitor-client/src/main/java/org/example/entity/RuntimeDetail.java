@@ -13,5 +13,5 @@ public class RuntimeDetail {
    double networkUpload;
    double networkDownload;
    double diskRead;
-   double disKWrite;
+   double diskWrite;
 }

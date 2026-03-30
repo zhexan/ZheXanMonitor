@@ -4,6 +4,7 @@ import com.example.entity.RestBean;
 import com.example.entity.vo.request.ChangePasswordVO;
 import com.example.entity.vo.request.CreateSubAccountVO;
 import com.example.entity.vo.request.ModifyEmailVO;
+import com.example.entity.vo.request.UpdateSubAccountVO;
 import com.example.entity.vo.response.SubAccountVO;
 import com.example.service.AccountService;
 import com.example.utils.Const;
@@ -50,6 +51,12 @@ public class UserController {
             return RestBean.failure(401, "非法参数");
         service.deleteSubAccount(uid);
         return RestBean.success();
+    }
+
+    @PostMapping("/sub/update")
+    public RestBean<Void> updateSubAccount(@RequestBody UpdateSubAccountVO vo) {
+        String result = service.updateSubAccount(vo);
+        return result == null ? RestBean.success() : RestBean.failure(400, result);
     }
 
     @GetMapping("/sub/list")

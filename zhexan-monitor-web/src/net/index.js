@@ -100,8 +100,26 @@ function get(url, success, failure = defaultFailure) {
     internalGet(url, accessHeader(), success, failure)
 }
 
+function getWithParams(url, params, success, failure = defaultFailure) {
+    axios.get(url, { headers: accessHeader(), params: params }).then(({data}) => {
+        if(data.code === 200)
+            success(data.data)
+        else
+            failure(data.message, data.code, url)
+    }).catch(err => defaultError(err))
+}
+
+function postWithParams(url, data, params, success, failure = defaultFailure) {
+    axios.post(url, data, { headers: accessHeader(), params: params }).then(({data}) => {
+        if(data.code === 200)
+            success(data.data)
+        else
+            failure(data.message, data.code, url)
+    }).catch(err => defaultError(err))
+}
+
 function unauthorized() {
     return !takeAccessToken()
 }
 
-export { post, get, login, logout, unauthorized }
+export { post, get, getWithParams, postWithParams, login, logout, unauthorized }
