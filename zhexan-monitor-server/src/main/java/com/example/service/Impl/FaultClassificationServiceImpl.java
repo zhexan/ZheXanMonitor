@@ -18,9 +18,7 @@ import jakarta.annotation.PostConstruct;
 import jakarta.annotation.Resource;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import smile.classification.RandomForest;
-import smile.data.Tuple;
-import smile.data.type.StructType;
+import weka.classifiers.trees.RandomForest;
 
 import java.time.LocalDateTime;
 import java.util.*;
@@ -183,15 +181,11 @@ public class FaultClassificationServiceImpl extends ServiceImpl<FaultTrainingDat
                     runtimeData.getDiskWrite()
             };
             
-            // 使用模型的 schema 创建 Tuple
-            StructType schema = model.schema();
-            Tuple tuple = Tuple.of(features, schema);
-            
             // 预测
-            int predictedLabel = model.predict(tuple);
+            int predictedLabel = aiModelTrainingService.predict(model, features);
             
             // 计算各类别的概率
-            Map<String, Double> probabilities = calculateProbabilitiesWithSMILE(model, tuple);
+            Map<String, Double> probabilities = calculateProbabilities(model, features);
             
             // 构建结果
             FaultClassificationResultVO result = new FaultClassificationResultVO();
@@ -509,62 +503,48 @@ public class FaultClassificationServiceImpl extends ServiceImpl<FaultTrainingDat
     }
 
     /**
-     * 计算各故障类型的概率（使用 SMILE 官方 API）
+     * 计算各故障类型的概率（使用 Weka）
      */
-    private Map<String, Double> calculateProbabilitiesWithSMILE(RandomForest model, Tuple tuple) {
+    private Map<String, Double> calculateProbabilities(RandomForest model, double[] features) {
         Map<String, Double> probabilities = new HashMap<>();
         
-        // 获取所有故障类型
-        FaultType[] types = FaultType.values();
-        
-        // 使用 SMILE 的 predictProba 方法计算后验概率
-        double[] probArray = new double[types.length];
         try {
-            // SMILE 3.1.1 的 predict 方法可以填充概率数组
-            model.predict(tuple, probArray);
+            // 获取所有故障类型
+            FaultType[] types = FaultType.values();
+            
+            // 创建 Weka 实例
+            ArrayList<weka.core.Attribute> attributes = new ArrayList<>();
+            for (int i = 0; i < 7; i++) {
+                attributes.add(new weka.core.Attribute("attr" + i));
+            }
+            ArrayList<String> classLabels = new ArrayList<>();
+            for (FaultType type : types) {
+                classLabels.add(type.getCode().toString());
+            }
+            attributes.add(new weka.core.Attribute("label", classLabels));
+            
+            weka.core.Instances instances = new weka.core.Instances("ProbData", attributes, 1);
+            instances.setClassIndex(7);
+            
+            double[] instanceValues = new double[8];
+            System.arraycopy(features, 0, instanceValues, 0, 7);
+            
+            weka.core.DenseInstance instance = new weka.core.DenseInstance(1.0, instanceValues);
+            instance.setDataset(instances);
+            
+            // 使用 Weka 的 distributionForInstance 获取概率分布
+            double[] probArray = model.distributionForInstance(instance);
             
             // 将概率数组转换为 Map
-            for (int i = 0; i < types.length; i++) {
+            for (int i = 0; i < Math.min(types.length, probArray.length); i++) {
                 probabilities.put(types[i].name(), probArray[i]);
             }
         } catch (Exception e) {
-            log.warn("SMILE 概率计算失败，使用投票统计方式", e);
-            // 降级到原来的投票方式
-            return calculateProbabilities(model, tuple);
-        }
-        
-        return probabilities;
-    }
-    
-    /**
-     * 计算各故障类型的概率
-     */
-    private Map<String, Double> calculateProbabilities(RandomForest model, Tuple tuple) {
-        Map<String, Double> probabilities = new HashMap<>();
-        
-        // 获取所有故障类型
-        for (FaultType type : FaultType.values()) {
-            probabilities.put(type.name(), 0.0);
-        }
-        
-        // 使用投票机制计算概率
-        int k = 7; // 7 个故障类型
-        int[] votes = new int[k];
-        
-        // 获取所有树进行投票
-        smile.classification.DecisionTree[] trees = model.trees();
-        for (smile.classification.DecisionTree tree : trees) {
-            int prediction = tree.predict(tuple);
-            if (prediction >= 0 && prediction < k) {
-                votes[prediction]++;
+            log.warn("Weka 概率计算失败，使用均匀分布", e);
+            // 降级到均匀分布
+            for (FaultType type : FaultType.values()) {
+                probabilities.put(type.name(), 1.0 / FaultType.values().length);
             }
-        }
-        
-        // 计算概率
-        int totalTrees = trees.length;
-        for (int i = 0; i < k; i++) {
-            double probability = (double) votes[i] / totalTrees;
-            probabilities.put(FaultType.values()[i].name(), probability);
         }
         
         return probabilities;

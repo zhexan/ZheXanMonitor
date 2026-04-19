@@ -90,6 +90,13 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
                             minValuesMap.put(clientId, modelData.minValues());
                             maxValuesMap.put(clientId, modelData.maxValues());
                             thresholdMap.put(clientId, modelData.threshold());
+                            
+                            // 恢复训练数据
+                            if (modelData.trainingData() != null && !modelData.trainingData().isEmpty()) {
+                                trainingDataMap.put(clientId, new ArrayList<>(modelData.trainingData()));
+                                log.info("客户端 {} 的训练数据已恢复，共 {} 条", clientId, modelData.trainingData().size());
+                            }
+                            
                             log.info("客户端 {} 的模型加载成功，阈值: {}", clientId, modelData.threshold());
                         }
                     }
@@ -148,10 +155,10 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
             double dynamicThreshold = calculateDynamicThreshold(normalizedArray, isolationForest);
             thresholdMap.put(clientId, dynamicThreshold);
 
-            // 保存模型到 Redis
+            // 保存模型和训练数据到 Redis（保存所有参与训练的数据）
             try {
                 byte[] modelBytes = modelPersistenceUtil.serializeObject(isolationForest);
-                modelPersistenceUtil.saveModel(clientId, modelBytes, minValues, maxValues, dynamicThreshold);
+                modelPersistenceUtil.saveModel(clientId, modelBytes, minValues, maxValues, dynamicThreshold, new ArrayList<>(historyData));
             } catch (Exception e) {
                 log.warn("保存模型到 Redis 失败，将仅使用内存存储", e);
             }
@@ -276,8 +283,14 @@ public class AnomalyDetectionServiceImpl implements AnomalyDetectionService {
         List<RuntimeDetailVO> originalData = trainingDataMap.get(clientId);
         List<RuntimeDetailVO> newDataBuffer = newDataBufferMap.get(clientId);
         
-        if (originalData == null || newDataBuffer == null) {
-            log.warn("客户端 {} 的训练数据或新数据缓冲区为空", clientId);
+        if (originalData == null || originalData.isEmpty()) {
+            log.warn("客户端 {} 的原始训练数据为空，清空缓冲区并跳过增量重训练", clientId);
+            newDataBufferMap.remove(clientId);
+            return;
+        }
+        
+        if (newDataBuffer == null || newDataBuffer.isEmpty()) {
+            log.warn("客户端 {} 的新数据缓冲区为空", clientId);
             return;
         }
         

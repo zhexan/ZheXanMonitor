@@ -6,23 +6,12 @@ import com.example.service.AIModelTrainingService;
 import com.example.utils.FeatureNormalizer;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
-import smile.classification.RandomForest;
-import smile.data.DataFrame;
-import smile.data.Tuple;
-import smile.data.type.StructType;
-import smile.data.formula.Formula;
-import smile.data.vector.IntVector;
-import smile.base.cart.SplitRule;
+import weka.classifiers.trees.RandomForest;
+import weka.core.*;
 
 import jakarta.annotation.Resource;
 import java.util.*;
 
-/**
- * AI 模型训练服务实现
- * 
- * @author zhexan
- * @since 2026-03-14
- */
 @Slf4j
 @Service
 public class AIModelTrainingServiceImpl implements AIModelTrainingService {
@@ -42,19 +31,15 @@ public class AIModelTrainingServiceImpl implements AIModelTrainingService {
         }
         
         try {
-            // 打印归一化参数
             featureNormalizer.printNormalizationInfo();
             
-            // 打乱数据
             List<FaultTrainingData> shuffledData = new ArrayList<>(trainingData);
             Collections.shuffle(shuffledData);
             
-            // 80/20 划分训练集和测试集
             int splitIndex = (int)(shuffledData.size() * TRAIN_RATIO);
             List<FaultTrainingData> trainSet = shuffledData.subList(0, splitIndex);
             List<FaultTrainingData> testSet = shuffledData.subList(splitIndex, shuffledData.size());
             
-            // 数据增强只在训练集上进行
             List<FaultTrainingData> actualTrainSet = trainSet;
             if (trainingData.size() < IDEAL_TRAINING_SIZE) {
                 log.info("训练数据量在 [{}, {}) 之间，对训练集启用数据增强", MIN_TRAINING_SIZE, IDEAL_TRAINING_SIZE);
@@ -64,32 +49,22 @@ public class AIModelTrainingServiceImpl implements AIModelTrainingService {
             
             log.info("训练集最终：{} 条，测试集：{} 条", actualTrainSet.size(), testSet.size());
             
-            // 创建 DataFrame
-            DataFrame df = createDataFrame(actualTrainSet);
+            Instances trainData = createWekaInstances(actualTrainSet);
+            Instances testDataTemplate = createWekaInstances(testSet);
             
-            // 训练随机森林
-            RandomForest model = RandomForest.fit(
-                Formula.lhs("label"), 
-                df,
-                100,                        // ntrees
-                (int) Math.sqrt(FEATURE_COUNT), // mtry
-                SplitRule.GINI,             // 分裂规则
-                20,                         // maxDepth
-                Integer.MAX_VALUE,          // maxNodes
-                2,                          // nodeSize
-                1.0                         // subsample
-            );
+            RandomForest rf = new RandomForest();
+            String[] options = weka.core.Utils.splitOptions("-I 100 -K 0 -S 1");
+            rf.setOptions(options);
+            rf.buildClassifier(trainData);
             
-            // 评估模型
-            ModelMetrics metrics = evaluateModel(model, testSet);
+            ModelMetrics metrics = evaluateModel(rf, testDataTemplate, testSet);
             log.info("模型评估结果 - {}", metrics);
             
-            // 质量检查
             if (metrics.accuracy() < 0.7) {
                 throw new RuntimeException("模型准确率低于阈值 (70%)：" + String.format("%.2f%%", metrics.accuracy() * 100));
             }
             
-            return model;
+            return rf;
             
         } catch (Exception e) {
             log.error("训练模型失败", e);
@@ -104,9 +79,26 @@ public class AIModelTrainingServiceImpl implements AIModelTrainingService {
         }
         
         try {
-            StructType schema = model.schema();
-            Tuple tuple = Tuple.of(features, schema);
-            return model.predict(tuple);
+            ArrayList<Attribute> attributes = new ArrayList<>();
+            for (int i = 0; i < FEATURE_COUNT; i++) {
+                attributes.add(new Attribute("attr" + i));
+            }
+            ArrayList<String> classLabels = new ArrayList<>();
+            for (FaultType type : FaultType.values()) {
+                classLabels.add(type.getCode().toString());
+            }
+            attributes.add(new Attribute("label", classLabels));
+            
+            Instances emptyData = new Instances("PredictData", attributes, 1);
+            emptyData.setClassIndex(FEATURE_COUNT);
+            
+            double[] instanceValues = new double[FEATURE_COUNT + 1];
+            System.arraycopy(features, 0, instanceValues, 0, FEATURE_COUNT);
+            
+            DenseInstance instance = new DenseInstance(1.0, instanceValues);
+            instance.setDataset(emptyData);
+            
+            return (int) model.classifyInstance(instance);
         } catch (Exception e) {
             log.error("预测失败", e);
             throw new RuntimeException("预测失败：" + e.getMessage(), e);
@@ -115,32 +107,44 @@ public class AIModelTrainingServiceImpl implements AIModelTrainingService {
     
     @Override
     public ModelMetrics evaluateModel(RandomForest model, List<FaultTrainingData> testData) {
+        try {
+            Instances testDataWeka = createWekaInstances(testData);
+            return evaluateModel(model, testDataWeka, testData);
+        } catch (Exception e) {
+            log.error("评估模型失败", e);
+            throw new RuntimeException("模型评估失败：" + e.getMessage(), e);
+        }
+    }
+    
+    private ModelMetrics evaluateModel(RandomForest model, Instances testData, List<FaultTrainingData> testDataList) {
         int correct = 0;
-        int total = testData.size();
+        int total = testDataList.size();
         
         Map<Integer, Integer> truePositives = new HashMap<>();
         Map<Integer, Integer> predictedPositives = new HashMap<>();
-        
-        // 统计各个类别的真实样本数
         Map<Integer, Integer> actualCounts = new HashMap<>();
         
-        for (FaultTrainingData data : testData) {
-            double[] features = extractFeatures(data);
-            int predicted = predict(model, features);
-            int actual = data.getFaultTypeCode();
-            
-            if (predicted == actual) {
-                correct++;
+        try {
+            for (int i = 0; i < testData.numInstances(); i++) {
+                Instance instance = testData.instance(i);
+                int predicted = (int) model.classifyInstance(instance);
+                int actual = testDataList.get(i).getFaultTypeCode();
+                
+                if (predicted == actual) {
+                    correct++;
+                }
+                
+                truePositives.merge(actual, (predicted == actual) ? 1 : 0, Integer::sum);
+                predictedPositives.merge(predicted, 1, Integer::sum);
+                actualCounts.merge(actual, 1, Integer::sum);
             }
-            
-            truePositives.merge(actual, (predicted == actual) ? 1 : 0, Integer::sum);
-            predictedPositives.merge(predicted, 1, Integer::sum);
-            actualCounts.merge(actual, 1, Integer::sum);
+        } catch (Exception e) {
+            log.error("评估过程出错", e);
+            throw new RuntimeException("评估过程出错：" + e.getMessage(), e);
         }
         
         double accuracy = (double) correct / total;
         
-        // 计算宏平均精确率和召回率
         double precisionSum = 0.0;
         double recallSum = 0.0;
         
@@ -165,47 +169,43 @@ public class AIModelTrainingServiceImpl implements AIModelTrainingService {
         return new ModelMetrics(accuracy, precision, recall, f1);
     }
     
-    /**
-     * 创建 DataFrame
-     */
-    private DataFrame createDataFrame(List<FaultTrainingData> dataList) {
-        int n = dataList.size();
-        double[][] data = new double[n][FEATURE_COUNT + 1];
+    private Instances createWekaInstances(List<FaultTrainingData> dataList) {
+        ArrayList<Attribute> attributes = new ArrayList<>();
         
-        for (int i = 0; i < n; i++) {
-            FaultTrainingData faultData = dataList.get(i);
-            data[i][0] = faultData.getCpuUsage();
-            data[i][1] = faultData.getMemoryUsage();
-            data[i][2] = faultData.getDiskUsage();
-            data[i][3] = faultData.getNetworkUpload();
-            data[i][4] = faultData.getNetworkDownload();
-            data[i][5] = faultData.getDiskRead();
-            data[i][6] = faultData.getDiskWrite();
-            data[i][7] = faultData.getFaultTypeCode();
+        attributes.add(new Attribute("cpu"));
+        attributes.add(new Attribute("memory"));
+        attributes.add(new Attribute("disk"));
+        attributes.add(new Attribute("networkUpload"));
+        attributes.add(new Attribute("networkDownload"));
+        attributes.add(new Attribute("diskRead"));
+        attributes.add(new Attribute("diskWrite"));
+        
+        ArrayList<String> classLabels = new ArrayList<>();
+        for (FaultType type : FaultType.values()) {
+            classLabels.add(type.getCode().toString());
+        }
+        attributes.add(new Attribute("label", classLabels));
+        
+        Instances data = new Instances("FaultData", attributes, dataList.size());
+        data.setClassIndex(attributes.size() - 1);
+        
+        for (FaultTrainingData faultData : dataList) {
+            double[] values = new double[attributes.size()];
+            values[0] = faultData.getCpuUsage();
+            values[1] = faultData.getMemoryUsage();
+            values[2] = faultData.getDiskUsage();
+            values[3] = faultData.getNetworkUpload();
+            values[4] = faultData.getNetworkDownload();
+            values[5] = faultData.getDiskRead();
+            values[6] = faultData.getDiskWrite();
+            values[7] = faultData.getFaultTypeCode();
+            
+            data.add(new DenseInstance(1.0, values));
         }
         
-        return DataFrame.of(data, 
-                "cpu", "memory", "disk", "net_upload", "net_download", "disk_read", "disk_write", "label");
+        return data;
     }
     
-    /**
-     * 提取特征
-     */
-    private double[] extractFeatures(FaultTrainingData data) {
-        return new double[] {
-            data.getCpuUsage(),
-            data.getMemoryUsage(),
-            data.getDiskUsage(),
-            data.getNetworkUpload(),
-            data.getNetworkDownload(),
-            data.getDiskRead(),
-            data.getDiskWrite()
-        };
-    }
-    
-    /**
-     * 数据增强：通过添加高斯噪声生成新的训练样本
-     */
     public List<FaultTrainingData> augmentTrainingData(List<FaultTrainingData> originalData) {
         List<FaultTrainingData> augmented = new ArrayList<>();
         
@@ -218,9 +218,6 @@ public class AIModelTrainingServiceImpl implements AIModelTrainingService {
         return augmented;
     }
     
-    /**
-     * 为训练数据添加高斯噪声
-     */
     private FaultTrainingData addGaussianNoise(FaultTrainingData data, double sigma) {
         FaultTrainingData noisyData = new FaultTrainingData();
         noisyData.setClientId(data.getClientId());
@@ -240,9 +237,6 @@ public class AIModelTrainingServiceImpl implements AIModelTrainingService {
         return noisyData;
     }
     
-    /**
-     * 截断值到指定范围
-     */
     private double clamp(double value, double min, double max) {
         return Math.max(min, Math.min(value, max));
     }

@@ -2,7 +2,7 @@ package com.example.service;
 
 import com.example.entity.dto.FaultTrainingData;
 import lombok.Getter;
-import smile.classification.RandomForest;
+import weka.classifiers.trees.RandomForest;
 
 import java.util.List;
 

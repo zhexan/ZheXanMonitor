@@ -115,11 +115,18 @@
             <version>0.1.55</version>
         </dependency>
         
-        <!-- SMILE机器学习库 -->
+        <!-- SMILE机器学习库 (用于异常检测) -->
         <dependency>
             <groupId>com.github.haifengl</groupId>
             <artifactId>smile-core</artifactId>
             <version>3.1.1</version>
+        </dependency>
+        
+        <!-- Weka机器学习库 (用于故障分类) -->
+        <dependency>
+            <groupId>nz.ac.waikato.cms.weka</groupId>
+            <artifactId>weka-stable</artifactId>
+            <version>3.8.6</version>
         </dependency>
     </dependencies>
     <build>

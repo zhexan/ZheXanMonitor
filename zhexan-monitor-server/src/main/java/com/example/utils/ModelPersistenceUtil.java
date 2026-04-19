@@ -1,5 +1,6 @@
 package com.example.utils;
 
+import com.example.entity.vo.request.RuntimeDetailVO;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.stereotype.Component;
@@ -17,24 +18,35 @@ public class ModelPersistenceUtil {
 
     private static final String MODEL_KEY_PREFIX = "anomaly:model:";
     private static final String META_KEY_PREFIX = "anomaly:meta:";
+    private static final String TRAINING_DATA_KEY_PREFIX = "anomaly:training:";
     private static final long DEFAULT_MODEL_TTL = 30 * 24 * 3600; // 30 days
 
     @Resource
     private StringRedisTemplate template;
 
-    public void saveModel(int clientId, byte[] modelData, double[] minValues, double[] maxValues, double threshold) {
+    public void saveModel(int clientId, byte[] modelData, double[] minValues, double[] maxValues, double threshold, List<RuntimeDetailVO> trainingData) {
         String modelKey = MODEL_KEY_PREFIX + clientId;
         String metaKey = META_KEY_PREFIX + clientId;
+        String trainingDataKey = TRAINING_DATA_KEY_PREFIX + clientId;
 
         try {
-            // 使用 Base64 编码将字节数组转换为字符串
+            // 保存模型
             String modelDataStr = Base64.getEncoder().encodeToString(modelData);
             template.opsForValue().set(modelKey, modelDataStr, DEFAULT_MODEL_TTL, TimeUnit.SECONDS);
 
+            // 保存元数据
             String metaBuilder = "threshold=" + threshold +
                     ";minValues=" + arrayToString(minValues) +
                     ";maxValues=" + arrayToString(maxValues);
             template.opsForValue().set(metaKey, metaBuilder, DEFAULT_MODEL_TTL, TimeUnit.SECONDS);
+
+            // 保存训练数据（只保存最小训练数据量）
+            if (trainingData != null && !trainingData.isEmpty()) {
+                byte[] trainingDataBytes = serializeObject(trainingData);
+                String trainingDataStr = Base64.getEncoder().encodeToString(trainingDataBytes);
+                template.opsForValue().set(trainingDataKey, trainingDataStr, DEFAULT_MODEL_TTL, TimeUnit.SECONDS);
+                log.info("客户端 {} 的训练数据已保存到 Redis，共 {} 条", clientId, trainingData.size());
+            }
 
             log.info("客户端 {} 的模型已保存到 Redis", clientId);
         } catch (Exception e) {
@@ -43,13 +55,16 @@ public class ModelPersistenceUtil {
         }
     }
 
+    @SuppressWarnings("unchecked")
     public ModelData loadModel(int clientId) {
         String modelKey = MODEL_KEY_PREFIX + clientId;
         String metaKey = META_KEY_PREFIX + clientId;
+        String trainingDataKey = TRAINING_DATA_KEY_PREFIX + clientId;
 
         try {
             String modelDataStr = template.opsForValue().get(modelKey);
             String metaData = template.opsForValue().get(metaKey);
+            String trainingDataStr = template.opsForValue().get(trainingDataKey);
 
             if (modelDataStr == null || metaData == null) {
                 log.info("客户端 {} 在 Redis 中未找到模型", clientId);
@@ -77,8 +92,20 @@ public class ModelPersistenceUtil {
                 }
             }
 
+            // 加载训练数据
+            List<RuntimeDetailVO> trainingData = null;
+            if (trainingDataStr != null && !trainingDataStr.isEmpty()) {
+                try {
+                    byte[] trainingDataBytes = Base64.getDecoder().decode(trainingDataStr);
+                    trainingData = (List<RuntimeDetailVO>) deserializeObject(trainingDataBytes);
+                    log.info("客户端 {} 的训练数据已从 Redis 加载，共 {} 条", clientId, trainingData.size());
+                } catch (Exception e) {
+                    log.warn("客户端 {} 的训练数据加载失败: {}", clientId, e.getMessage());
+                }
+            }
+
             log.info("客户端 {} 的模型已从 Redis 加载", clientId);
-            return new ModelData(modelData, minValues, maxValues, threshold);
+            return new ModelData(modelData, minValues, maxValues, threshold, trainingData);
 
         } catch (Exception e) {
             log.error("从 Redis 加载模型失败，客户端 ID: {}", clientId, e);
@@ -149,7 +176,7 @@ public class ModelPersistenceUtil {
         }
         return arr;
     }
-        public record ModelData(byte[] modelData, double[] minValues, double[] maxValues, double threshold) {
+        public record ModelData(byte[] modelData, double[] minValues, double[] maxValues, double threshold, List<RuntimeDetailVO> trainingData) {
 
     }
 }
