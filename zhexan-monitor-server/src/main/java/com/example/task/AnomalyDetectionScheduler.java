@@ -17,6 +17,7 @@ import com.example.service.FaultClassificationService;
 import com.example.service.RootCauseAnalysisService;
 import com.example.websocket.AlarmWebSocket;
 import jakarta.annotation.Resource;
+import lombok.Setter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.BeanUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -59,7 +60,15 @@ public class AnomalyDetectionScheduler {
     
     @Resource
     private FaultClassificationService faultClassificationService;
-    
+
+
+    /**
+     * -- SETTER --
+     *  设置置信度阈值，用于控制高置信度分类结果加入训练集
+     */
+    @Setter
+    private double confidenceThreshold = 0.85;
+
     /**
      * 服务启动后延迟 10 秒执行初始化训练任务
      * 检查所有客户端的数据量，达到 100 条自动开始训练
@@ -217,7 +226,7 @@ public class AnomalyDetectionScheduler {
                         }
                         
                         // === 综合处理：保存告警并推送前端 ===
-                        handleDetectionResults(clientId, result, rcaResult, faultResult);
+                        handleDetectionResults(clientId, result, rcaResult, faultResult, currentData);
                         
                         // 触发增量更新（将异常数据加入缓冲区）
                         updateModelWithAnomalyData(clientId, currentData);
@@ -306,11 +315,19 @@ public class AnomalyDetectionScheduler {
             Integer clientId,
             AnomalyResultVO anomalyResult,
             RootCauseAnalysisVO rcaResult,
-            FaultClassificationResultVO faultResult) {
+            FaultClassificationResultVO faultResult,
+            RuntimeDetailVO currentData) {
         
         try {
             // 保存告警记录到数据库
             AnomalyAlarm alarm = convertToAlarm(anomalyResult, clientId);
+            
+            // 设置故障类型代码
+            Integer faultTypeCode = null;
+            if (faultResult != null && faultResult.getFaultType() != null) {
+                faultTypeCode = faultResult.getFaultType().getCode();
+                alarm.setFaultTypeCode(faultTypeCode);
+            }
             
             // 如果有 RCA 结果，添加到描述中
             if (rcaResult != null && rcaResult.getRootCauseDescription() != null) {
@@ -319,6 +336,22 @@ public class AnomalyDetectionScheduler {
             }
             
             anomalyAlarmService.saveAlarm(alarm);
+            
+            // 高置信度且是故障 → 加入训练集 (pending 状态)
+            if (faultResult != null && faultResult.isFault() 
+                    && faultResult.getConfidence() >= confidenceThreshold) {
+                try {
+                    faultClassificationService.addManualTrainingData(
+                            clientId, 
+                            faultTypeCode, 
+                            currentData
+                    );
+                    log.debug("高置信度故障加入训练集 - clientId: {}, faultType: {}, confidence: {}", 
+                            clientId, faultResult.getFaultType(), faultResult.getConfidence());
+                } catch (Exception e) {
+                    log.warn("添加训练数据失败，但不影响告警", e);
+                }
+            }
             
             // 通过 WebSocket 推送告警到前端（增强版）
             pushEnhancedAlarmToFrontend(clientId, anomalyResult, rcaResult, faultResult);

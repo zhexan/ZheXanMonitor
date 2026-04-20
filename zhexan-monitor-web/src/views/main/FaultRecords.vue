@@ -15,7 +15,8 @@ const faultTypes = [
   {code: 3, name: '磁盘已满'},
   {code: 4, name: '网络拥塞'},
   {code: 5, name: 'IO瓶颈'},
-  {code: 6, name: '复合故障'}
+  {code: 6, name: '复合故障'},
+  {code: 7, name: '检测到异常'}
 ]
 
 const loadClients = () => {
@@ -30,15 +31,17 @@ const loadRecords = () => {
   if (selectedClient.value) {
     params.clientId = selectedClient.value
   }
-  getWithParams('/api/fault/list', params, data => {
-    console.log('故障记录 API 返回:', data)
-    console.log('records:', data?.records)
-    console.log('stats:', data?.stats)
-    records.value = data?.records || []
-    stats.value = data?.stats || {}
+  getWithParams('/api/alarm/faults', params, data => {
+    const alarms = data?.alarms || []
+    records.value = alarms
+    const statMap = {}
+    alarms.forEach(alarm => {
+      const code = alarm.faultTypeCode
+      statMap[code] = (statMap[code] || 0) + 1
+    })
+    stats.value = statMap
     loading.value = false
   }, msg => {
-    console.log('加载故障记录失败:', msg)
     ElMessage.error(msg)
     loading.value = false
   })
@@ -124,9 +127,9 @@ const formatResource = (record) => {
             </el-tag>
           </template>
         </el-table-column>
-        <el-table-column prop="dataTime" label="发生时间" width="180">
+        <el-table-column prop="alarmTime" label="发生时间" width="180">
           <template #default="{row}">
-            {{formatTime(row.dataTime)}}
+            {{formatTime(row.alarmTime)}}
           </template>
         </el-table-column>
         <el-table-column label="资源使用" min-width="200">

@@ -88,4 +88,9 @@ public class AnomalyAlarm {
      * 告警时间
      */
     private LocalDateTime alarmTime;
+    
+    /**
+     * 故障类型代码: 0=正常(异常非故障), 1=CPU过载, 2=内存泄漏, 3=磁盘满, 4=网络拥塞, 5=IO瓶颈, 6=复合故障, 7=检测到异常
+     */
+    private Integer faultTypeCode;
 }

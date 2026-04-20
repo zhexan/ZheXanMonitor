@@ -53,6 +53,38 @@ public class AlarmController {
             if (!isAdmin && accessibleClients != null && !accessibleClients.contains(clientId)) {
                 return RestBean.noPermission();
             }
+            result = anomalyAlarmService.getAnomaliesPaged(clientId, offset, limit);
+        } else if (isAdmin) {
+            result = anomalyAlarmService.getAnomaliesPaged(null, offset, limit);
+        } else {
+            result = anomalyAlarmService.getAnomaliesPagedByClientIds(accessibleClients, offset, limit);
+        }
+
+        return RestBean.success(result);
+    }
+    
+    /**
+     * 获取未处理告警列表（分页）- 包括故障
+     * 管理员可获取所有客户端的告警，子账户只能获取所管理客户端的告警
+     * @deprecated 使用 /unhandled(异常) 和 /faults(故障) 替代
+     */
+    @Deprecated
+    @GetMapping("/unhandled-all")
+    public RestBean<Map<String, Object>> getUnhandledAlarmsAll(
+            @RequestParam(required = false) Integer clientId,
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "20") int limit,
+            @RequestAttribute(Const.ATTR_USER_ID) int userId,
+            @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
+
+        boolean isAdmin = isAdminAccount(userRole);
+        List<Integer> accessibleClients = isAdmin ? null : getAccessibleClients(userId, userRole);
+
+        Map<String, Object> result;
+        if (clientId != null) {
+            if (!isAdmin && accessibleClients != null && !accessibleClients.contains(clientId)) {
+                return RestBean.noPermission();
+            }
             result = anomalyAlarmService.getUnhandledAlarmsPaged(clientId, offset, limit);
         } else if (isAdmin) {
             result = anomalyAlarmService.getUnhandledAlarmsPaged(null, offset, limit);
@@ -88,6 +120,36 @@ public class AlarmController {
             result = anomalyAlarmService.getAlarmHistoryPaged(null, offset, limit);
         } else {
             result = anomalyAlarmService.getAlarmHistoryPagedByClientIds(accessibleClients, offset, limit);
+        }
+
+        return RestBean.success(result);
+    }
+    
+    /**
+     * 获取故障记录列表 (faultTypeCode != 0)
+     * 故障页面数据源
+     */
+    @GetMapping("/faults")
+    public RestBean<Map<String, Object>> getFaultRecords(
+            @RequestParam(required = false) Integer clientId,
+            @RequestParam(defaultValue = "0") int offset,
+            @RequestParam(defaultValue = "100") int limit,
+            @RequestAttribute(Const.ATTR_USER_ID) int userId,
+            @RequestAttribute(Const.ATTR_USER_ROLE) String userRole) {
+
+        boolean isAdmin = isAdminAccount(userRole);
+        List<Integer> accessibleClients = isAdmin ? null : getAccessibleClients(userId, userRole);
+
+        Map<String, Object> result;
+        if (clientId != null) {
+            if (!isAdmin && accessibleClients != null && !accessibleClients.contains(clientId)) {
+                return RestBean.noPermission();
+            }
+            result = anomalyAlarmService.getFaultsPaged(clientId, offset, limit);
+        } else if (isAdmin) {
+            result = anomalyAlarmService.getFaultsPaged(null, offset, limit);
+        } else {
+            result = anomalyAlarmService.getFaultsPagedByClientIds(accessibleClients, offset, limit);
         }
 
         return RestBean.success(result);

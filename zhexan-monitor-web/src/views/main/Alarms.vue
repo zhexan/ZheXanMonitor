@@ -36,18 +36,26 @@ const pendingHasMore = ref(true)
 const pendingLoading = ref(false)
 
 const faultTypes = [
+  {code: 0, name: '异常'},
   {code: 1, name: 'CPU过载'},
   {code: 2, name: '内存泄漏'},
   {code: 3, name: '磁盘已满'},
   {code: 4, name: '网络拥塞'},
   {code: 5, name: 'IO瓶颈'},
-  {code: 6, name: '复合故障'}
+  {code: 6, name: '复合故障'},
+  {code: 7, name: '检测到异常'}
 ]
 
 const loadClients = () => {
   get('/api/monitor/list', data => {
     clients.value = data
   })
+}
+
+const getFaultTypeName = (code) => {
+  if (code === null || code === undefined) return '待分类'
+  const type = faultTypes.find(t => t.code === code)
+  return type ? type.name : '未知'
 }
 
 const loadUnhandledAlarms = (isLoadMore = false) => {
@@ -102,8 +110,10 @@ const loadHistoryAlarms = (isLoadMore = false) => {
     }
     historyTotal.value = data.total || 0
     historyHasMore.value = data.hasMore !== false
+    historyLoading.value = false
   }, msg => {
     ElMessage.error(msg)
+    historyLoading.value = false
   })
 }
 
@@ -282,11 +292,6 @@ const reviewData = (id, faultTypeCode, approved) => {
     }
     loadPendingData()
   }, msg => ElMessage.error(msg))
-}
-
-const getFaultTypeName = (code) => {
-  const type = faultTypes.find(t => t.code === code)
-  return type ? type.name : '未知'
 }
 
 const getClientName = (clientId) => {
